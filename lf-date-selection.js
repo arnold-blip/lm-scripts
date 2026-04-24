@@ -140,6 +140,14 @@
   injectForm();
   injectModal();
 
+  // Set contact_id at page load from URL param
+  var urlParams = new URLSearchParams(window.location.search);
+  var _cid = urlParams.get('contact_id') || urlParams.get('cid') || '';
+  if (!_cid && window.opvid) _cid = window.opvid;
+  var _cidField = document.getElementById('lf-field-contact-id');
+  if (_cidField && _cid) { _cidField.value = _cid; }
+  console.log('contact_id on load:', _cid);
+
   var selectedEvent = {};
   var formatMap = { 'in person': '162', 'online': '161', 'hybrid': '160' };
 
@@ -214,15 +222,6 @@
     btn.disabled = true;
     btn.textContent = 'Please wait...';
     document.getElementById('lf-submitting').style.display = 'block';
-
-    var contactIdInput = document.getElementById('lf-field-contact-id');
-    if (contactIdInput) {
-      var urlParams = new URLSearchParams(window.location.search);
-      var cid = urlParams.get('contact_id') || urlParams.get('cid') || '';
-      if (!cid && window.opvid) cid = window.opvid;
-      contactIdInput.value = cid;
-      console.log('contact_id:', cid);
-    }
 
     document.getElementById('lf-field-event-id').value   = selectedEvent.eventId   || '';
     document.getElementById('lf-field-course').value     = selectedEvent.course    || '';
