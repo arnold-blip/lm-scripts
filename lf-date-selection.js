@@ -1,11 +1,8 @@
 (function(){
 
   var FORM_UID = 'p2c270197f4';
+  var FORM_ID = '4';
   var FORM_ACTION = 'https://forms.ontraport.com/v2.4/form_processor.php';
-
-  // ============================================================
-  // PAGE LOAD: inject form and modal into document.body
-  // ============================================================
 
   function injectForm() {
     var wrapper = document.createElement('div');
@@ -41,13 +38,10 @@
       form.appendChild(el);
     }
 
-    // Form identification — this is what tells Ontraport which form this is
     addInput('uid', 'hidden', null, FORM_UID);
-
-    // Contact identification
+    addInput('form_id', 'hidden', null, FORM_ID);
     addInput('contact_id', 'hidden', 'lf-field-contact-id');
-
-    // Custom fields
+    addInput('email', 'hidden', 'lf-field-email');
     addInput('f2478', 'hidden', 'lf-field-event-id');
     addInput('f2479', 'hidden', 'lf-field-course');
     addSelect('f2480', 'lf-field-format', [
@@ -141,10 +135,6 @@
     document.body.appendChild(overlay);
     overlay.addEventListener('click', function(e){ if (e.target === overlay) lfCloseModal(); });
   }
-
-  // ============================================================
-  // CARD DATA EXTRACTION + MODAL HANDLERS
-  // ============================================================
 
   var selectedEvent = {};
   var formatMap = { 'in person': '162', 'online': '161', 'hybrid': '160' };
@@ -249,16 +239,14 @@
 
     console.log('LF: submitting form with values:');
     console.log('  uid:', form.querySelector('[name="uid"]').value);
+    console.log('  form_id:', form.querySelector('[name="form_id"]').value);
     console.log('  contact_id:', form.querySelector('[name="contact_id"]').value);
+    console.log('  email:', form.querySelector('[name="email"]').value);
     console.log('  f2478 (event id):', form.querySelector('[name="f2478"]').value);
     console.log('  f2479 (course):', form.querySelector('[name="f2479"]').value);
 
     form.submit();
   };
-
-  // ============================================================
-  // BUTTON CLICK INTERCEPT
-  // ============================================================
 
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') lfCloseModal();
@@ -278,10 +266,6 @@
     window.lfHandleCardClick(card);
   }, true);
 
-  // ============================================================
-  // BOOT
-  // ============================================================
-
   function boot() {
     injectForm();
     injectModal();
@@ -289,9 +273,15 @@
     var urlParams = new URLSearchParams(window.location.search);
     var cid = urlParams.get('contact_id') || urlParams.get('uid') || urlParams.get('cid') || '';
     if (!cid && window.opvid) cid = window.opvid;
+    var email = urlParams.get('email') || '';
+
     var cidField = document.getElementById('lf-field-contact-id');
     if (cidField && cid) cidField.value = cid;
+    var emailField = document.getElementById('lf-field-email');
+    if (emailField && email) emailField.value = email;
+
     console.log('LF: contact_id on load:', cid);
+    console.log('LF: email on load:', email);
     console.log('LF: Form ready. Button intercept active.');
   }
 
