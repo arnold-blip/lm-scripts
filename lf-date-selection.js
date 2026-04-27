@@ -1,15 +1,69 @@
 (function(){
 
+  var FORM_UID = 'p2c270197f4';
+  var FORM_ACTION = 'https://forms.ontraport.com/v2.4/form_processor.php';
+
   // ============================================================
-  // PAGE LOAD: inject hidden wrapper and modal into document.body
+  // PAGE LOAD: inject form and modal into document.body
   // ============================================================
 
-  function injectHiddenWrapper() {
+  function injectForm() {
     var wrapper = document.createElement('div');
     wrapper.id = 'lf-hidden-form-wrapper';
     wrapper.style.cssText = 'display:none!important;position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;';
+
+    var form = document.createElement('form');
+    form.id = 'lf-date-selection-form';
+    form.action = FORM_ACTION;
+    form.method = 'post';
+    form.acceptCharset = 'UTF-8';
+    form.target = '_top';
+
+    function addInput(name, type, id, value) {
+      var el = document.createElement('input');
+      el.name = name;
+      el.type = type || 'hidden';
+      if (id) el.id = id;
+      el.value = value || '';
+      form.appendChild(el);
+    }
+
+    function addSelect(name, id, options) {
+      var el = document.createElement('select');
+      el.name = name;
+      el.id = id;
+      options.forEach(function(o) {
+        var opt = document.createElement('option');
+        opt.value = o.value;
+        opt.textContent = o.label;
+        el.appendChild(opt);
+      });
+      form.appendChild(el);
+    }
+
+    // Form identification — this is what tells Ontraport which form this is
+    addInput('uid', 'hidden', null, FORM_UID);
+
+    // Contact identification
+    addInput('contact_id', 'hidden', 'lf-field-contact-id');
+
+    // Custom fields
+    addInput('f2478', 'hidden', 'lf-field-event-id');
+    addInput('f2479', 'hidden', 'lf-field-course');
+    addSelect('f2480', 'lf-field-format', [
+      { value: '', label: 'Select...' },
+      { value: '162', label: 'In person' },
+      { value: '161', label: 'Online' },
+      { value: '160', label: 'Hybrid' }
+    ]);
+    addInput('f2481', 'hidden', 'lf-field-dates');
+    addInput('f2482', 'hidden', 'lf-field-timezone');
+    addInput('f2483', 'hidden', 'lf-field-language');
+    addInput('f2484', 'hidden', 'lf-field-location');
+    addInput('f2454', 'hidden', 'lf-field-start-date');
+
+    wrapper.appendChild(form);
     document.body.appendChild(wrapper);
-    return wrapper;
   }
 
   function injectModal() {
@@ -89,79 +143,6 @@
   }
 
   // ============================================================
-  // FORM HOOK: wait for Ontraport's snippet to render the form,
-  // then move it into our hidden wrapper
-  // ============================================================
-
-  var FORM_UID = 'p2c270197f4';
-  var hiddenWrapper = null;
-  var formMoved = false;
-
-  function findOntraportForm() {
-    var form = document.querySelector('form[name="' + FORM_UID + '"]') ||
-               document.querySelector('form#' + FORM_UID) ||
-               document.querySelector('form[action*="form_processor"][action*="' + FORM_UID + '"]');
-    if (form) return form;
-
-    var forms = document.querySelectorAll('form[action*="form_processor"]');
-    for (var i = 0; i < forms.length; i++) {
-      var uidInput = forms[i].querySelector('input[name="uid"]');
-      if (uidInput && uidInput.value === FORM_UID) return forms[i];
-    }
-    return null;
-  }
-
-  function moveFormToHiddenWrapper(form) {
-    if (formMoved) return;
-    form.id = 'lf-date-selection-form';
-
-    function tagField(name, id) {
-      var f = form.querySelector('[name="' + name + '"]');
-      if (f) f.id = id;
-    }
-    tagField('f2478', 'lf-field-event-id');
-    tagField('f2479', 'lf-field-course');
-    tagField('f2480', 'lf-field-format');
-    tagField('f2481', 'lf-field-dates');
-    tagField('f2482', 'lf-field-timezone');
-    tagField('f2483', 'lf-field-language');
-    tagField('f2484', 'lf-field-location');
-    tagField('f2454', 'lf-field-start-date');
-    tagField('contact_id', 'lf-field-contact-id');
-
-    var formContainer = form.closest('.opf-form-container, .ontraport_form_container') || form;
-    hiddenWrapper.appendChild(formContainer);
-
-    var urlParams = new URLSearchParams(window.location.search);
-    var cid = urlParams.get('contact_id') || urlParams.get('uid') || urlParams.get('cid') || '';
-    if (!cid && window.opvid) cid = window.opvid;
-    var cidField = document.getElementById('lf-field-contact-id');
-    if (cidField && cid) cidField.value = cid;
-    console.log('LF: contact_id on load:', cid);
-
-    formMoved = true;
-    console.log('LF: Form moved to hidden wrapper.');
-  }
-
-  function watchForForm() {
-    var existing = findOntraportForm();
-    if (existing) {
-      moveFormToHiddenWrapper(existing);
-      return;
-    }
-
-    var observer = new MutationObserver(function(mutations) {
-      var f = findOntraportForm();
-      if (f) {
-        moveFormToHiddenWrapper(f);
-        observer.disconnect();
-      }
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-    setTimeout(function() { observer.disconnect(); }, 15000);
-  }
-
-  // ============================================================
   // CARD DATA EXTRACTION + MODAL HANDLERS
   // ============================================================
 
@@ -237,7 +218,7 @@
   window.lfConfirmSelection = function() {
     var form = document.getElementById('lf-date-selection-form');
     if (!form) {
-      console.error('LF: form not found at submit time. Snippet may have failed to render.');
+      console.error('LF: form not found at submit time.');
       alert('Sorry, something went wrong. Please refresh and try again.');
       return;
     }
@@ -265,6 +246,12 @@
       var formatText = (selectedEvent.format || '').toLowerCase().trim();
       formatSelect.value = formatMap[formatText] || selectedEvent.format || '';
     }
+
+    console.log('LF: submitting form with values:');
+    console.log('  uid:', form.querySelector('[name="uid"]').value);
+    console.log('  contact_id:', form.querySelector('[name="contact_id"]').value);
+    console.log('  f2478 (event id):', form.querySelector('[name="f2478"]').value);
+    console.log('  f2479 (course):', form.querySelector('[name="f2479"]').value);
 
     form.submit();
   };
@@ -296,10 +283,16 @@
   // ============================================================
 
   function boot() {
-    hiddenWrapper = injectHiddenWrapper();
+    injectForm();
     injectModal();
-    watchForForm();
-    console.log('LF: Button intercept active.');
+
+    var urlParams = new URLSearchParams(window.location.search);
+    var cid = urlParams.get('contact_id') || urlParams.get('uid') || urlParams.get('cid') || '';
+    if (!cid && window.opvid) cid = window.opvid;
+    var cidField = document.getElementById('lf-field-contact-id');
+    if (cidField && cid) cidField.value = cid;
+    console.log('LF: contact_id on load:', cid);
+    console.log('LF: Form ready. Button intercept active.');
   }
 
   if (document.readyState === 'loading') {
