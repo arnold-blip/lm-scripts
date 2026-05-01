@@ -1,294 +1,187 @@
-(function(){
+(function () {
 
-  var FORM_UID = 'p2c270197f4';
-  var FORM_ID = '4';
-  var FORM_ACTION = 'https://forms.ontraport.com/v2.4/form_processor.php';
+  // ============================================================
+  // CONFIG - update BASE_URL if the confirmation page URL changes
+  // ============================================================
+  var BASE_URL = 'https://landmark-worldwide.mytemporarydomain.com/confirm-your-forum/';
 
-  function injectForm() {
-    var wrapper = document.createElement('div');
-    wrapper.id = 'lf-hidden-form-wrapper';
-    wrapper.style.cssText = 'display:none!important;position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;';
-
-    var form = document.createElement('form');
-    form.id = 'lf-date-selection-form';
-    form.action = FORM_ACTION;
-    form.method = 'post';
-    form.acceptCharset = 'UTF-8';
-    form.target = '_top';
-
-    function addInput(name, type, id, value) {
-      var el = document.createElement('input');
-      el.name = name;
-      el.type = type || 'hidden';
-      if (id) el.id = id;
-      el.value = value || '';
-      form.appendChild(el);
-    }
-
-    function addSelect(name, id, options) {
-      var el = document.createElement('select');
-      el.name = name;
-      el.id = id;
-      options.forEach(function(o) {
-        var opt = document.createElement('option');
-        opt.value = o.value;
-        opt.textContent = o.label;
-        el.appendChild(opt);
-      });
-      form.appendChild(el);
-    }
-
-    addInput('uid', 'hidden', null, FORM_UID);
-    addInput('form_id', 'hidden', null, FORM_ID);
-    addInput('contact_id', 'hidden', 'lf-field-contact-id');
-    addInput('email', 'hidden', 'lf-field-email');
-    addInput('f2478', 'hidden', 'lf-field-event-id');
-    addInput('f2479', 'hidden', 'lf-field-course');
-    addSelect('f2480', 'lf-field-format', [
-      { value: '', label: 'Select...' },
-      { value: '162', label: 'In person' },
-      { value: '161', label: 'Online' },
-      { value: '160', label: 'Hybrid' }
-    ]);
-    addInput('f2481', 'hidden', 'lf-field-dates');
-    addInput('f2482', 'hidden', 'lf-field-timezone');
-    addInput('f2483', 'hidden', 'lf-field-language');
-    addInput('f2484', 'hidden', 'lf-field-location');
-    addInput('f2454', 'hidden', 'lf-field-start-date');
-
-    wrapper.appendChild(form);
-    document.body.appendChild(wrapper);
+  // ============================================================
+  // STEP 1: GET CONTACT ID FROM URL
+  // ============================================================
+  function getContactId() {
+    var params = new URLSearchParams(window.location.search);
+    return params.get('uid') || params.get('contact_id') || '';
   }
 
+  // ============================================================
+  // STEP 2: INJECT MODAL INTO BODY
+  // ============================================================
   function injectModal() {
-    var overlay = document.createElement('div');
-    overlay.id = 'lf-confirm-modal';
-    overlay.style.cssText = 'display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);z-index:99999;align-items:center;justify-content:center;';
+    if (document.getElementById('lf-modal')) return;
 
-    var box = document.createElement('div');
-    box.style.cssText = 'background:#fff;border-radius:8px;max-width:520px;width:90%;padding:40px 36px;box-shadow:0 8px 40px rgba(0,0,0,0.18);position:relative;font-family:inherit;';
+    var modal = document.createElement('div');
+    modal.id = 'lf-modal';
+    modal.style.cssText = [
+      'display:none',
+      'position:fixed',
+      'top:0',
+      'left:0',
+      'width:100%',
+      'height:100%',
+      'background:rgba(0,0,0,0.65)',
+      'z-index:99999',
+      'align-items:center',
+      'justify-content:center'
+    ].join(';');
 
-    var closeBtn = document.createElement('button');
-    closeBtn.onclick = function(){ lfCloseModal(); };
-    closeBtn.style.cssText = 'position:absolute;top:16px;right:20px;background:none;border:none;font-size:22px;cursor:pointer;color:#666;';
-    closeBtn.textContent = '\u00d7';
-    box.appendChild(closeBtn);
+    modal.innerHTML = [
+      '<div style="background:#fff;border-radius:8px;width:92%;max-width:700px;height:85vh;position:relative;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,0.25);">',
+        '<button id="lf-modal-close" style="position:absolute;top:12px;right:16px;background:none;border:none;font-size:26px;cursor:pointer;color:#555;z-index:10;line-height:1;" aria-label="Close">&times;</button>',
+        '<div id="lf-modal-loading" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#555;font-size:15px;font-family:inherit;">Loading your forum details...</div>',
+        '<iframe id="lf-modal-iframe" src="" style="width:100%;height:100%;border:none;display:block;" allowtransparency="true"></iframe>',
+      '</div>'
+    ].join('');
 
-    var h2 = document.createElement('h2');
-    h2.style.cssText = 'margin:0 0 6px;font-size:22px;color:#1a1a1a;';
-    h2.textContent = 'Confirm Your Forum Dates';
-    box.appendChild(h2);
+    document.body.appendChild(modal);
 
-    var sub = document.createElement('p');
-    sub.style.cssText = 'margin:0 0 24px;color:#555;font-size:15px;';
-    sub.textContent = 'Please review your selection before confirming.';
-    box.appendChild(sub);
+    // Close on X button
+    document.getElementById('lf-modal-close').addEventListener('click', closeModal);
 
-    var card = document.createElement('div');
-    card.style.cssText = 'background:#f7f7f7;border-radius:6px;padding:20px 22px;margin-bottom:28px;';
+    // Close on overlay click
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) closeModal();
+    });
 
-    function addRow(label, id) {
-      var row = document.createElement('div');
-      row.style.marginBottom = '10px';
-      var lbl = document.createElement('span');
-      lbl.style.cssText = 'font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:#888;display:block;';
-      lbl.textContent = label;
-      var val = document.createElement('div');
-      val.id = id;
-      val.style.cssText = 'font-size:16px;font-weight:600;color:#1a1a1a;margin-top:2px;';
-      row.appendChild(lbl);
-      row.appendChild(val);
-      card.appendChild(row);
-    }
+    // Close on Escape key
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeModal();
+    });
 
-    addRow('Course', 'lf-modal-course');
-    addRow('Dates', 'lf-modal-dates');
-    addRow('Format', 'lf-modal-format');
-    addRow('Time Zone', 'lf-modal-timezone');
-    addRow('Language', 'lf-modal-language');
-    box.appendChild(card);
-
-    var actions = document.createElement('div');
-    actions.style.cssText = 'display:flex;gap:12px;justify-content:flex-end;';
-
-    var goBack = document.createElement('button');
-    goBack.onclick = function(){ lfCloseModal(); };
-    goBack.style.cssText = 'padding:12px 24px;border:2px solid #ccc;background:#fff;border-radius:6px;font-size:15px;cursor:pointer;color:#444;';
-    goBack.textContent = 'Go Back';
-    actions.appendChild(goBack);
-
-    var confirmBtn = document.createElement('button');
-    confirmBtn.id = 'lf-confirm-btn';
-    confirmBtn.onclick = function(){ lfConfirmSelection(); };
-    confirmBtn.style.cssText = 'padding:12px 28px;background:#2e6b3e;border:none;border-radius:6px;font-size:15px;font-weight:600;cursor:pointer;color:#fff;';
-    confirmBtn.textContent = 'Confirm & Reserve';
-    actions.appendChild(confirmBtn);
-    box.appendChild(actions);
-
-    var submitting = document.createElement('div');
-    submitting.id = 'lf-submitting';
-    submitting.style.cssText = 'display:none;text-align:center;margin-top:16px;color:#555;font-size:14px;';
-    submitting.textContent = 'Reserving your spot...';
-    box.appendChild(submitting);
-
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-    overlay.addEventListener('click', function(e){ if (e.target === overlay) lfCloseModal(); });
+    // Hide loading message once iframe loads
+    document.getElementById('lf-modal-iframe').addEventListener('load', function () {
+      document.getElementById('lf-modal-loading').style.display = 'none';
+    });
   }
 
-  var selectedEvent = {};
-  var formatMap = { 'in person': '162', 'online': '161', 'hybrid': '160' };
+  // ============================================================
+  // STEP 3: OPEN MODAL WITH CORRECT EVENT URL
+  // ============================================================
+  function openModal(eventId) {
+    var contactId = getContactId();
+    var url = BASE_URL + eventId + '?uid=' + contactId + '&eid=' + eventId;
 
-  function parseCardText(card) {
-    var result = { format: '', timezone: '', language: '' };
-    var badge = card.querySelector('[class*="tag"], [class*="badge"], [class*="format"]');
-    if (badge) {
-      result.format = badge.textContent.trim();
-    } else {
-      var allText = card.textContent || '';
-      var fmtMatch = allText.match(/\b(Online|In Person|Hybrid)\b/i);
-      if (fmtMatch) result.format = fmtMatch[1];
-    }
-    var walker = document.createTreeWalker(card, NodeFilter.SHOW_TEXT, null, false);
-    var node;
-    while (node = walker.nextNode()) {
-      var t = node.nodeValue.trim();
-      var tzLangMatch = t.match(/(.+?Timezone)\s*[\u00b7\u2022\-]\s*Language:\s*(.+)/i);
-      if (tzLangMatch) {
-        result.timezone = tzLangMatch[1].trim();
-        result.language = tzLangMatch[2].trim();
-        break;
-      }
-      var tzMatch = t.match(/(.+?Timezone)/i);
-      if (tzMatch && !result.timezone) result.timezone = tzMatch[1].trim();
-      var langMatch = t.match(/Language:\s*(.+)/i);
-      if (langMatch && !result.language) result.language = langMatch[1].trim();
-    }
-    return result;
-  }
+    console.log('LF: Opening iframe with URL:', url);
 
-  window.lfHandleCardClick = function(card) {
-    var parsed = parseCardText(card);
-    selectedEvent = {
-      eventId:   card.getAttribute('opt-id') || card.getAttribute('data-event-id') || '',
-      course:    card.getAttribute('data-course') || (function(){ var el = card.querySelector('strong, b, h2, h3, h4'); return el ? el.textContent.trim() : ''; })(),
-      format:    card.getAttribute('data-format') || parsed.format,
-      dates:     card.getAttribute('data-dates') || (function(){
-                   var months = /\b(January|February|March|April|May|June|July|August|September|October|November|December)\b/;
-                   var w = document.createTreeWalker(card, NodeFilter.SHOW_TEXT, null, false);
-                   var n;
-                   while (n = w.nextNode()) { var t = n.nodeValue.trim(); if (months.test(t)) return t; }
-                   return '';
-                 })(),
-      timezone:  card.getAttribute('data-timezone') || parsed.timezone,
-      language:  card.getAttribute('data-language') || parsed.language,
-      location:  card.getAttribute('data-location') || '',
-      startDate: card.getAttribute('data-start-date') || ''
-    };
-    console.log('LF card data:', selectedEvent);
-    document.getElementById('lf-modal-course').textContent   = selectedEvent.course   || 'The Landmark Forum';
-    document.getElementById('lf-modal-dates').textContent    = selectedEvent.dates    || '(dates not found)';
-    document.getElementById('lf-modal-format').textContent   = selectedEvent.format   || '(format not found)';
-    document.getElementById('lf-modal-timezone').textContent = selectedEvent.timezone || '(timezone not found)';
-    document.getElementById('lf-modal-language').textContent = selectedEvent.language || '(language not found)';
-    document.getElementById('lf-confirm-modal').style.display = 'flex';
+    var iframe = document.getElementById('lf-modal-iframe');
+    var loading = document.getElementById('lf-modal-loading');
+
+    // Reset iframe and show loading
+    iframe.src = '';
+    loading.style.display = 'block';
+
+    // Set iframe src
+    iframe.src = url;
+
+    // Show modal
+    var modal = document.getElementById('lf-modal');
+    modal.style.display = 'flex';
     document.body.style.overflow = 'hidden';
-  };
+  }
 
-  window.lfCloseModal = function() {
-    document.getElementById('lf-confirm-modal').style.display = 'none';
+  // ============================================================
+  // STEP 4: CLOSE MODAL
+  // ============================================================
+  function closeModal() {
+    var modal = document.getElementById('lf-modal');
+    if (!modal) return;
+    modal.style.display = 'none';
     document.body.style.overflow = '';
-    selectedEvent = {};
-    var btn = document.getElementById('lf-confirm-btn');
-    btn.disabled = false;
-    btn.textContent = 'Confirm & Reserve';
-    document.getElementById('lf-submitting').style.display = 'none';
-  };
 
-  window.lfConfirmSelection = function() {
-    var form = document.getElementById('lf-date-selection-form');
-    if (!form) {
-      console.error('LF: form not found at submit time.');
-      alert('Sorry, something went wrong. Please refresh and try again.');
-      return;
+    // Clear iframe to stop any ongoing loading
+    document.getElementById('lf-modal-iframe').src = '';
+    document.getElementById('lf-modal-loading').style.display = 'block';
+  }
+
+  // ============================================================
+  // STEP 5: INTERCEPT SELECT DATE BUTTON CLICKS
+  // ============================================================
+  function wireButtons() {
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest('.opt-button, .opt-element.opt-button');
+      if (!btn) return;
+
+      var text = (btn.textContent || '').trim();
+      if (text.indexOf('Select Date') === -1) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
+      // Walk up to find the card container
+      var card = btn.closest('[data-template-id], [opt-id]') ||
+                 btn.parentElement.parentElement.parentElement.parentElement.parentElement;
+
+      // Get event ID from the card's link href or data attribute
+      // The Block button previously had href like /confirm-your-forum/3LCB7PS
+      // We extract the event ID from the card context
+      var eventId = getEventIdFromCard(card, btn);
+
+      if (!eventId) {
+        console.warn('LF: Could not find event ID for this card.');
+        return;
+      }
+
+      console.log('LF: Event ID found:', eventId);
+      openModal(eventId);
+
+    }, true);
+
+    console.log('LF: Button intercept active.');
+  }
+
+  // ============================================================
+  // STEP 6: EXTRACT EVENT ID FROM CARD
+  // Tries multiple methods to find the Event ID
+  // ============================================================
+  function getEventIdFromCard(card, btn) {
+    // Method 1: data attribute on card (most reliable if set)
+    if (card.getAttribute('data-event-id')) {
+      return card.getAttribute('data-event-id');
     }
 
-    var btn = document.getElementById('lf-confirm-btn');
-    btn.disabled = true;
-    btn.textContent = 'Please wait...';
-    document.getElementById('lf-submitting').style.display = 'block';
+    // Method 2: read from URL params on page (single event page)
+    var params = new URLSearchParams(window.location.search);
+    if (params.get('eid')) return params.get('eid');
 
-    function setVal(id, val) {
-      var el = document.getElementById(id);
-      if (el) el.value = val || '';
+    // Method 3: extract from any link inside the card that
+    // contains /confirm-your-forum/ in the href
+    var links = card.querySelectorAll('a[href]');
+    for (var i = 0; i < links.length; i++) {
+      var href = links[i].getAttribute('href') || '';
+      var match = href.match(/confirm-your-forum\/([A-Z0-9]+)/i);
+      if (match) return match[1];
     }
 
-    setVal('lf-field-event-id', selectedEvent.eventId);
-    setVal('lf-field-course', selectedEvent.course);
-    setVal('lf-field-dates', selectedEvent.dates);
-    setVal('lf-field-timezone', selectedEvent.timezone);
-    setVal('lf-field-language', selectedEvent.language);
-    setVal('lf-field-location', selectedEvent.location);
-    setVal('lf-field-start-date', selectedEvent.startDate);
+    // Method 4: try the button's own original href before it was cleared
+    var btnHref = btn.getAttribute('data-original-href') || btn.getAttribute('href') || '';
+    var btnMatch = btnHref.match(/confirm-your-forum\/([A-Z0-9]+)/i);
+    if (btnMatch) return btnMatch[1];
 
-    var formatSelect = document.getElementById('lf-field-format');
-    if (formatSelect) {
-      var formatText = (selectedEvent.format || '').toLowerCase().trim();
-      formatSelect.value = formatMap[formatText] || selectedEvent.format || '';
-    }
+    return '';
+  }
 
-    console.log('LF: submitting form with values:');
-    console.log('  uid:', form.querySelector('[name="uid"]').value);
-    console.log('  form_id:', form.querySelector('[name="form_id"]').value);
-    console.log('  contact_id:', form.querySelector('[name="contact_id"]').value);
-    console.log('  email:', form.querySelector('[name="email"]').value);
-    console.log('  f2478 (event id):', form.querySelector('[name="f2478"]').value);
-    console.log('  f2479 (course):', form.querySelector('[name="f2479"]').value);
-
-    form.submit();
-  };
-
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') lfCloseModal();
-  });
-
-  document.addEventListener('click', function(e) {
-    var btn = e.target.closest('.opt-button, .opt-element.opt-button');
-    if (!btn) return;
-    if ((btn.textContent || '').indexOf('Select Date') === -1) return;
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-    var card = btn.closest('.opt-row');
-    console.log('LF: button clicked', btn);
-    console.log('LF: card found', card);
-    if (!card) { console.error('LF: card not found'); return; }
-    window.lfHandleCardClick(card);
-  }, true);
-
-  function boot() {
-    injectForm();
+  // ============================================================
+  // INIT
+  // ============================================================
+  function init() {
     injectModal();
-
-    var urlParams = new URLSearchParams(window.location.search);
-    var cid = urlParams.get('contact_id') || urlParams.get('uid') || urlParams.get('cid') || '';
-    if (!cid && window.opvid) cid = window.opvid;
-    var email = urlParams.get('email') || '';
-
-    var cidField = document.getElementById('lf-field-contact-id');
-    if (cidField && cid) cidField.value = cid;
-    var emailField = document.getElementById('lf-field-email');
-    if (emailField && email) emailField.value = email;
-
-    console.log('LF: contact_id on load:', cid);
-    console.log('LF: email on load:', email);
-    console.log('LF: Form ready. Button intercept active.');
+    wireButtons();
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', boot);
+    document.addEventListener('DOMContentLoaded', init);
   } else {
-    boot();
+    init();
   }
 
 })();
