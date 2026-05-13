@@ -61,6 +61,11 @@
     document.getElementById('lf-modal-iframe').addEventListener('load', function () {
       document.getElementById('lf-modal-loading').style.display = 'none';
     });
+
+     // Listen for close signal from iframe
+    window.addEventListener('message', function (e) {
+      if (e.data === 'lf-close-modal') closeModal();
+    });
   }
 
   // ============================================================
