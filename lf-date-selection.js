@@ -57,14 +57,37 @@
       if (e.key === 'Escape') closeModal();
     });
 
-    // Hide loading message once iframe loads
-    document.getElementById('lf-modal-iframe').addEventListener('load', function () {
-      document.getElementById('lf-modal-loading').style.display = 'none';
-    });
+    var iframe = document.getElementById('lf-modal-iframe');
 
-     // Listen for close signal from iframe
-    window.addEventListener('message', function (e) {
-      if (e.data === 'lf-close-modal') closeModal();
+    // After iframe loads, wire No Go Back button directly
+    iframe.addEventListener('load', function () {
+      document.getElementById('lf-modal-loading').style.display = 'none';
+
+      // Try direct DOM access first (works because same domain)
+      try {
+        var iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+        var btns = iframeDoc.querySelectorAll('.opt-button, a, button');
+        btns.forEach(function (btn) {
+          if ((btn.textContent || '').trim().indexOf('No, Go Back') !== -1) {
+            btn.addEventListener('click', function (e) {
+              e.preventDefault();
+              e.stopImmediatePropagation();
+              closeModal();
+            }, true);
+            console.log('LF: No Go Back button wired to closeModal.');
+          }
+        });
+      } catch (err) {
+        console.warn('LF: Could not access iframe DOM directly, falling back to postMessage.', err);
+      }
+
+      // postMessage fallback (in case direct access fails)
+      window.addEventListener('message', function (e) {
+        if (e.data === 'lf-close-modal') {
+          console.log('LF: Received lf-close-modal postMessage.');
+          closeModal();
+        }
+      });
     });
   }
 
@@ -127,8 +150,6 @@
                  btn.parentElement.parentElement.parentElement.parentElement.parentElement;
 
       // Get event ID from the card's link href or data attribute
-      // The Block button previously had href like /confirm-your-forum/3LCB7PS
-      // We extract the event ID from the card context
       var eventId = getEventIdFromCard(card, btn);
 
       if (!eventId) {
