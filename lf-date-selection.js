@@ -57,37 +57,12 @@
       if (e.key === 'Escape') closeModal();
     });
 
-    var iframe = document.getElementById('lf-modal-iframe');
-
-    // After iframe loads, wire No Go Back button directly
-    iframe.addEventListener('load', function () {
-      document.getElementById('lf-modal-loading').style.display = 'none';
-
-      // Try direct DOM access first (works because same domain)
-      try {
-        var iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-        var btns = iframeDoc.querySelectorAll('.opt-button, a, button');
-        btns.forEach(function (btn) {
-          if ((btn.textContent || '').trim().indexOf('No, Go Back') !== -1) {
-            btn.addEventListener('click', function (e) {
-              e.preventDefault();
-              e.stopImmediatePropagation();
-              closeModal();
-            }, true);
-            console.log('LF: No Go Back button wired to closeModal.');
-          }
-        });
-      } catch (err) {
-        console.warn('LF: Could not access iframe DOM directly, falling back to postMessage.', err);
+    // postMessage fallback
+    window.addEventListener('message', function (e) {
+      if (e.data === 'lf-close-modal') {
+        console.log('LF: Received lf-close-modal postMessage.');
+        closeModal();
       }
-
-      // postMessage fallback (in case direct access fails)
-      window.addEventListener('message', function (e) {
-        if (e.data === 'lf-close-modal') {
-          console.log('LF: Received lf-close-modal postMessage.');
-          closeModal();
-        }
-      });
     });
   }
 
@@ -114,6 +89,9 @@
     var modal = document.getElementById('lf-modal');
     modal.style.display = 'flex';
     document.body.style.overflow = 'hidden';
+
+    // Start polling for No Go Back button inside iframe
+    startPollingForNoGoBack(iframe);
   }
 
   // ============================================================
@@ -126,8 +104,89 @@
     document.body.style.overflow = '';
 
     // Clear iframe to stop any ongoing loading
-    document.getElementById('lf-modal-iframe').src = '';
+    var iframe = document.getElementById('lf-modal-iframe');
+    iframe.src = '';
     document.getElementById('lf-modal-loading').style.display = 'block';
+
+    // Stop polling
+    stopPolling();
+  }
+
+  // ============================================================
+  // POLLING: find No Go Back button inside iframe after it loads
+  // Ontraport Dynamic Templates render late so we poll
+  // ============================================================
+  var pollInterval = null;
+  var pollCount = 0;
+
+  function stopPolling() {
+    if (pollInterval) {
+      clearInterval(pollInterval);
+      pollInterval = null;
+    }
+    pollCount = 0;
+  }
+
+  function startPollingForNoGoBack(iframe) {
+    stopPolling(); // clear any existing poll
+
+    pollInterval = setInterval(function () {
+      pollCount++;
+
+      // Give up after 20 seconds (40 attempts x 500ms)
+      if (pollCount > 40) {
+        console.warn('LF: Gave up polling for No Go Back button.');
+        stopPolling();
+        return;
+      }
+
+      try {
+        var iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+
+        // Search in main iframe doc
+        var found = wireNoGoBack(iframeDoc);
+
+        // Also search inside any nested iframes (Ontraport sometimes nests them)
+        if (!found) {
+          var nestedIframes = iframeDoc.querySelectorAll('iframe');
+          nestedIframes.forEach(function (nested) {
+            try {
+              var nestedDoc = nested.contentDocument || nested.contentWindow.document;
+              if (wireNoGoBack(nestedDoc)) found = true;
+            } catch (e) { /* cross-origin nested iframe, skip */ }
+          });
+        }
+
+        if (found) {
+          console.log('LF: No Go Back button wired. Stopping poll.');
+          stopPolling();
+        }
+      } catch (err) {
+        // iframe not ready yet, keep polling
+      }
+    }, 500);
+  }
+
+  function wireNoGoBack(doc) {
+    var found = false;
+    var btns = doc.querySelectorAll('.opt-button, a, button');
+    btns.forEach(function (btn) {
+      if (
+        (btn.textContent || '').trim().indexOf('No, Go Back') !== -1 &&
+        !btn.getAttribute('data-lf-wired')
+      ) {
+        btn.setAttribute('data-lf-wired', '1');
+        btn.addEventListener('click', function (e) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          console.log('LF: No Go Back clicked. Closing modal.');
+          closeModal();
+        }, true);
+        found = true;
+        console.log('LF: Wired No Go Back button:', btn);
+      }
+    });
+    return found;
   }
 
   // ============================================================
