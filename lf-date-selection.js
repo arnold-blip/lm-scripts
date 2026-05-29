@@ -1,118 +1,151 @@
 (function () {
 
   // ============================================================
-  // LANDMARK - Choose Your Forum confirm popup (no iframe)
-  // Reveals each card's own in-block confirm panel over a
-  // shared dimmed backdrop. No page loads, no iframe.
+  // LANDMARK - Choose Your Forum confirm popup
+  // Finds the clicked card's panel, clones its rendered HTML into
+  // a body-level modal, positions it with client dimensions.
+  // No CSS transform centering, no transformed-ancestor problem.
   // ============================================================
 
-  // The exact headline text inside each confirm panel.
-  // The script uses this to locate the panel within each card.
-  var PANEL_MARKER = 'Confirm Your Dates';
+  var PANEL_HEADLINE = 'Confirm Your Dates';
 
-  // How many levels to climb from the headline to reach the
-  // panel container. Adjust this if the tagged-panel count is wrong.
-  var CLIMB_LEVELS = 4;
+  var bodyModal = null;
+  var backdrop = null;
 
   function lock(on) {
     document.body.classList.toggle('lm-locked', !!on);
   }
 
-  function closeAll() {
-    var open = document.querySelectorAll('.lm-confirm-panel.lm-open');
-    for (var i = 0; i < open.length; i++) {
-      open[i].classList.remove('lm-open');
-    }
-    var bd = document.getElementById('lm-backdrop');
-    if (bd) bd.classList.remove('lm-open');
+  function positionModal() {
+    var vw = window.innerWidth || document.documentElement.clientWidth;
+    var vh = window.innerHeight || document.documentElement.clientHeight;
+    var w = Math.min(Math.round(vw * 0.92), 640);
+
+    bodyModal.style.width = w + 'px';
+    bodyModal.style.left = Math.round((vw - w) / 2) + 'px';
+    bodyModal.style.maxHeight = Math.round(vh * 0.88) + 'px';
+
+    var h = bodyModal.offsetHeight;
+    bodyModal.style.top = Math.max(20, Math.round((vh - h) / 2)) + 'px';
+  }
+
+  function closeModal() {
+    if (bodyModal) bodyModal.style.display = 'none';
+    if (backdrop) backdrop.classList.remove('lm-open');
     lock(false);
   }
 
-  // ============================================================
-  // Tag each panel by finding its headline and climbing up to
-  // the container that wraps the whole panel.
-  // ============================================================
-  function tagPanels() {
-    var nodes = document.querySelectorAll('h1,h2,h3,h4,div,span,p');
-    for (var i = 0; i < nodes.length; i++) {
-      var el = nodes[i];
-      if ((el.textContent || '').trim() === PANEL_MARKER) {
-        var box = el;
-        for (var up = 0; up < CLIMB_LEVELS && box.parentElement; up++) {
-          box = box.parentElement;
-        }
-        if (box && !box.classList.contains('lm-confirm-panel')) {
-          box.classList.add('lm-confirm-panel');
-        }
-      }
+  function setup() {
+    backdrop = document.getElementById('lm-backdrop');
+    if (!backdrop) {
+      backdrop = document.createElement('div');
+      backdrop.id = 'lm-backdrop';
+      document.body.appendChild(backdrop);
     }
-  }
+    backdrop.addEventListener('click', closeModal);
 
-  // ============================================================
-  // Open the panel that belongs to the clicked Select Date button
-  // (the nearest ancestor that contains a tagged panel).
-  // ============================================================
-  function openForButton(btn) {
-    var node = btn, panel = null;
-    while (node && node !== document.body) {
-      if (node.querySelector) {
-        var p = node.querySelector('.lm-confirm-panel');
-        if (p) { panel = p; break; }
-      }
-      node = node.parentElement;
-    }
-    if (!panel) {
-      console.warn('LM: no confirm panel found for this Select Date button.');
-      return;
-    }
-    closeAll();
-    var bd = document.getElementById('lm-backdrop');
-    if (bd) bd.classList.add('lm-open');
-    panel.classList.add('lm-open');
-    lock(true);
-  }
+    bodyModal = document.createElement('div');
+    bodyModal.id = 'lm-body-modal';
+    bodyModal.style.cssText = [
+      'display:none',
+      'position:fixed',
+      'overflow-y:auto',
+      'background:#fff',
+      'border-radius:10px',
+      'box-shadow:0 10px 50px rgba(0,0,0,0.3)',
+      'z-index:99999',
+      'padding:28px 24px',
+      'box-sizing:border-box'
+    ].join(';');
+    document.body.appendChild(bodyModal);
 
-  // ============================================================
-  // INIT
-  // ============================================================
-  function init() {
-    tagPanels();
-
-    var bd = document.getElementById('lm-backdrop');
-    if (bd) bd.addEventListener('click', closeAll);
+    window.addEventListener('resize', function () {
+      if (bodyModal.style.display === 'block') positionModal();
+    });
 
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') closeAll();
+      if (e.key === 'Escape') closeModal();
     });
+  }
+
+  // ============================================================
+  // Find the nearest card's panel from the clicked Select Date.
+  // Climbs one level at a time, stops at the first ancestor that
+  // contains a Confirm Your Dates headline, returns its .col__style.
+  // ============================================================
+  function getPanelForButton(btn) {
+    var a = btn.closest('a[opt-type="button-v3"],a[data-url_type]') || btn;
+    var node = a;
+    for (var i = 0; i < 12; i++) {
+      if (!node.parentElement) break;
+      node = node.parentElement;
+      var heads = node.querySelectorAll('h1,h2,h3,h4,h5,h6');
+      for (var k = 0; k < heads.length; k++) {
+        if ((heads[k].textContent || '').trim() === PANEL_HEADLINE) {
+          var panel = heads[k].closest('.col__style') || heads[k].parentElement;
+          console.log('[LM] Panel found at climb level ' + i);
+          return panel;
+        }
+      }
+    }
+    console.warn('[LM] no panel found for this Select Date button');
+    return null;
+  }
+
+  function openModal(panel) {
+    bodyModal.innerHTML = panel.innerHTML;
+    bodyModal.style.display = 'block';
+    positionModal();
+    backdrop.classList.add('lm-open');
+    lock(true);
+
+    // Re-wire close (X) inside the cloned content
+    var closeEls = bodyModal.querySelectorAll('.lm-close,[data-lm-close]');
+    for (var i = 0; i < closeEls.length; i++) {
+      (function (el) {
+        el.addEventListener('click', function (e) { e.preventDefault(); closeModal(); });
+      })(closeEls[i]);
+    }
+
+    // Re-wire Go Back inside the cloned content
+    var btns = bodyModal.querySelectorAll('a,button,.opt-button,.opt-button__text-target');
+    for (var j = 0; j < btns.length; j++) {
+      if ((btns[j].textContent || '').trim().toLowerCase().indexOf('go back') !== -1) {
+        (function (b) {
+          b.addEventListener('click', function (e) { e.preventDefault(); closeModal(); });
+        })(btns[j]);
+      }
+    }
+  }
+
+  function init() {
+    setup();
 
     document.addEventListener('click', function (e) {
 
-      // Close (X) or anything marked to close
-      var closeEl = e.target.closest('.lm-close, [data-lm-close]');
-      if (closeEl) { e.preventDefault(); closeAll(); return; }
-
-      var clickable = e.target.closest('.opt-button, .opt-element.opt-button, a, button, span');
-      if (!clickable) return;
-      var txt = (clickable.textContent || '').trim();
-
-      // Go Back inside an open panel closes the popup
-      if (txt.indexOf('Go Back') !== -1 && e.target.closest('.lm-confirm-panel')) {
+      // Close: backdrop or X
+      if (e.target.closest('[data-lm-close]') ||
+          e.target.closest('.lm-close') ||
+          e.target.id === 'lm-backdrop') {
         e.preventDefault();
-        closeAll();
+        closeModal();
         return;
       }
 
-      // Select Date opens this card's panel
-      if (txt.indexOf('Select Date') !== -1) {
+      // Open: Select Date
+      var el = e.target.closest('a[opt-type="button-v3"],a[data-url_type],.opt-button,button');
+      if (!el) return;
+      var textEl = el.querySelector('.opt-button__text-target') || el;
+      if ((textEl.textContent || '').trim().toLowerCase() === 'select date') {
         e.preventDefault();
         e.stopPropagation();
-        openForButton(clickable);
+        var panel = getPanelForButton(el);
+        if (panel) openModal(panel);
       }
 
     }, true);
 
-    console.log('LM: confirm popup ready. Panels tagged:',
-      document.querySelectorAll('.lm-confirm-panel').length);
+    console.log('[LM] Confirm popup ready');
   }
 
   if (document.readyState === 'loading') {
