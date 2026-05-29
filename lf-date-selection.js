@@ -71,7 +71,7 @@
   // ============================================================
   function openModal(eventId) {
     var contactId = getContactId();
-    var url = BASE_URL + eventId + '?uid=' + contactId + '&eid=' + eventId;
+    var url = BASE_URL + eventId + '?uid=' + contactId + '&id=' + eventId;
 
     console.log('LF: Opening iframe with URL:', url);
 
