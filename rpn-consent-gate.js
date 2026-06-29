@@ -50,6 +50,12 @@
     lockAfterAgree: true,        // re-check if the user tries to uncheck after agreeing
     forceClick: false,           // fallback: drive the box via label.click() instead of .checked
 
+    // The gate BLOCKS the submit button until the user agrees. (A hidden "Required"
+    // checkbox is NOT enough -- Ontraport skips validation on hidden fields.)
+    // Empty = auto-detect: input/button[type=submit] in the form, else text match
+    // "Complete My Registration". Set a CSS selector here if auto-detect misses it.
+    submitSelector: '',
+
     labels: {
       heading: 'Landmark Worldwide Registration Policies and Notices',
       agree: 'I Agree',
@@ -84,10 +90,102 @@
     // Stage 1: hide the native field until they've agreed.
     field.classList.add('lmrpn-hidden');
 
+    // Stage 1b: BLOCK the submit button until they agree. The hidden Required
+    // checkbox can't enforce this (Ontraport doesn't validate hidden fields),
+    // so the gate must guard submission itself.
+    setupSubmitGuard();
+
     link.addEventListener('click', function (e) {
       e.preventDefault();
       openModal();
     });
+  }
+
+  // --------------------------------------------------------------------------
+  // Submit guard -- nothing submits until STATE.agreed is true
+  // --------------------------------------------------------------------------
+  function toArr(nodes) { return Array.prototype.slice.call(nodes); }
+
+  function findSubmitButtons() {
+    var field = document.querySelector('.' + CFG.checkboxClass);
+    STATE.form = field ? field.closest('form') : null;
+    var btns = [];
+    var add = function (list) { toArr(list).forEach(function (b) { if (btns.indexOf(b) === -1) btns.push(b); }); };
+
+    if (CFG.submitSelector) add(document.querySelectorAll(CFG.submitSelector));
+    // Real submit controls: prefer inside the form, then anywhere on the page.
+    add((STATE.form || document).querySelectorAll('input[type="submit"], button[type="submit"]'));
+    if (!btns.length) add(document.querySelectorAll('input[type="submit"], button[type="submit"]'));
+    // Text-match fallback (document-wide) for styled <a>/<div>/<button> submit bars.
+    if (!btns.length) {
+      toArr(document.querySelectorAll('button, input[type="button"], a, [role="button"], div, span')).forEach(function (b) {
+        if (b.id === CFG.linkId || (b.closest && b.closest('.lmrpn-overlay'))) return;
+        var t = (b.textContent || b.value || '').trim().toLowerCase();
+        if (t && t.length < 60 && /complete my registration|complete registration/.test(t)) add([b]);
+      });
+    }
+    return btns;
+  }
+
+  // Resilient click-time test: does this element (or a near ancestor) look like
+  // the submit button? Catches it even if load-time detection missed it.
+  function looksLikeSubmit(start) {
+    var el = start;
+    for (var i = 0; el && el !== document && i < 6; i++, el = el.parentElement) {
+      if (el.id === CFG.linkId) return false;
+      if (el.closest && el.closest('.lmrpn-overlay')) return false;
+      var type = (el.getAttribute && (el.getAttribute('type') || '') || '').toLowerCase();
+      if (type === 'submit') return true;
+      var t = (el.textContent || el.value || '').trim().toLowerCase();
+      if (t && t.length < 60 && /complete my registration/.test(t)) return true;
+    }
+    return false;
+  }
+
+  function lockSubmitButtons() {
+    if (STATE.agreed) return;
+    STATE.submitBtns = findSubmitButtons();
+    STATE.submitBtns.forEach(function (b) { b.classList.add('lmrpn-submit-locked'); });
+  }
+
+  function setupSubmitGuard() {
+    lockSubmitButtons();
+    // The submit button may be injected after load -- re-detect and re-lock.
+    if (document.readyState !== 'complete') window.addEventListener('load', lockSubmitButtons);
+    setTimeout(lockSubmitButtons, 1500);
+
+    // Block clicks on the submit (capture phase, before Ontraport's own handler).
+    document.addEventListener('click', function (e) {
+      if (STATE.agreed) return;
+      var hit = (STATE.submitBtns || []).some(function (b) { return b === e.target || (b.contains && b.contains(e.target)); });
+      if (!hit && !looksLikeSubmit(e.target)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      blockedAttempt();
+    }, true);
+
+    // Backstop: block native form submit (covers Enter key / programmatic submit).
+    var formTarget = STATE.form || document;
+    formTarget.addEventListener('submit', function (e) {
+      if (STATE.agreed) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      blockedAttempt();
+    }, true);
+  }
+
+  function releaseSubmitGuard() {
+    (STATE.submitBtns || []).forEach(function (b) { b.classList.remove('lmrpn-submit-locked'); });
+  }
+
+  function blockedAttempt() {
+    // Push the user into the forced read, and flash the prompt panel.
+    openModal();
+    var panel = document.getElementById(CFG.panelId);
+    if (panel) {
+      panel.classList.add('lmrpn-flash');
+      setTimeout(function () { panel.classList.remove('lmrpn-flash'); }, 1200);
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -269,6 +367,9 @@
     var panel = document.getElementById(CFG.panelId);
     if (panel) panel.classList.add('lmrpn-agreed-panel');
 
+    // Now that consent is given, unblock the submit button.
+    releaseSubmitGuard();
+
     // Optional: lock so a stray click can't quietly revoke consent.
     if (CFG.lockAfterAgree) {
       input.addEventListener('click', function (e) {
@@ -367,6 +468,10 @@
     var css = '' +
       '.lmrpn-hidden{display:none !important;}' +
       '.lmrpn-noscroll{overflow:hidden !important;}' +
+      // Submit button is greyed + not-allowed until the user agrees.
+      '.lmrpn-submit-locked{opacity:.55 !important;cursor:not-allowed !important;filter:grayscale(35%);}' +
+      // Brief outline flash on the prompt panel when a blocked submit is attempted.
+      '.lmrpn-flash{outline:2px solid #f06449;outline-offset:4px;border-radius:4px;}' +
       '#' + CFG.linkId + '{color:#f06449;text-decoration:underline;cursor:pointer;font-weight:600;}' +
       '#' + CFG.linkId + ':hover{color:#d6513a;}' +
 
