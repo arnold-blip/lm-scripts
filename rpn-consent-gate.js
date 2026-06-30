@@ -293,7 +293,7 @@
     };
 
     if (CFG.policyUrl) {
-      fetch(CFG.policyUrl, { credentials: 'omit' })
+      fetch(CFG.policyUrl, { credentials: 'omit', cache: 'no-cache' })
         .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
         .then(afterLoad)
         .catch(function () { showLoadError(); });
