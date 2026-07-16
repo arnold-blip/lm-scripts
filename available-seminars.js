@@ -192,13 +192,27 @@
     document.body.style.overflow="hidden";
   }
   function closeConfirm(){ var o=document.getElementById("confirmOverlay"); if(o) o.classList.remove("show"); document.body.style.overflow=""; }
-  function confirmSelection(e){
-    if(e) e.preventDefault();
-    var d=currentData; if(!d) return false;
+  /* n8n webhook (SEM : Create Seminar Registration). Empty = show success without booking. */
+  var WEBHOOK_URL="https://landmarkworldwide.awesomate.io/webhook/pilot-seminar-select";
+  function showSuccess(d){
     var st=document.getElementById("successText"); if(st) st.textContent=d.course+" – "+(d.pattern||"")+".";
     var rf=document.getElementById("regForm"); if(rf) rf.style.display="none";
     var cs=document.getElementById("confirmSuccess"); if(cs) cs.classList.add("show");
     var addBtn=document.getElementById("addCalBtn"); if(addBtn) addBtn.style.display=datesValid(d.dates)?"":"none";
+  }
+  function confirmSelection(e){
+    if(e) e.preventDefault();
+    var d=currentData; if(!d) return false;
+    var cEl=document.getElementById("visitingContactId");
+    var payload={ contactId:cEl?(cEl.textContent||"").trim():"", eventId:d.eventId||"", courseId:d.courseId||"",
+      cantAttendFirst:(document.getElementById("exceptionCheck")||{}).checked?1:0, course:d.course||"", pattern:d.pattern||"" };
+    var btn=document.querySelector("#regForm .btn-confirm");
+    if(!WEBHOOK_URL){ showSuccess(d); return false; }
+    if(btn){ btn.disabled=true; btn.textContent="Booking..."; }
+    fetch(WEBHOOK_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)})
+      .then(function(r){ if(!r.ok) throw new Error("http "+r.status); return r.text(); })
+      .then(function(){ showSuccess(d); })
+      .catch(function(){ if(btn){ btn.disabled=false; btn.textContent="Confirm My Seminar"; } window.alert("Sorry, something went wrong booking your seminar. Please try again."); });
     return false;
   }
 
