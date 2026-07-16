@@ -54,6 +54,11 @@
     var base=MON[a.m-1]+" "+a.d+" – "+MON[b.m-1]+" "+b.d;
     return b.y>a.y ? base+", "+b.y : base;
   }
+  function datesValid(dates){ return dates.length>0 && dates.every(function(o){ return o.y>1900 && o.m>=1 && o.m<=12 && o.d>=1 && o.d<=31; }); }
+  function rawDateLine(raw){ return (raw||"").split(/[\n,]+/).map(function(s){return s.trim();}).filter(Boolean).join(", "); }
+  function parseTime(str){ var m=(str||"").trim().match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i); if(!m) return null; var h=parseInt(m[1],10), mi=m[2]?parseInt(m[2],10):0, ap=(m[3]||"").toLowerCase(); if(ap==="pm"&&h<12)h+=12; if(ap==="am"&&h===12)h=0; return {h:h,m:mi}; }
+  /* ---- date display: compact "Jul 20, 27, Aug 3" when YYYY-MM-DD, else show raw text as typed ---- */
+  function dateLine(raw){ var p=parseDates(raw); return datesValid(p)?compactDates(p):rawDateLine(raw); }
 
   /* ---- IANA + DST-correct wall-time -> UTC (no library) ---- */
   function ianaOf(t){ var m=(t||"").match(/\(([^)]+\/[^)]+)\)/); return m?m[1]:(t||"UTC"); }
@@ -66,12 +71,12 @@
   function icsStamp(dt){ return dt.toISOString().replace(/[-:]/g,"").replace(/\.\d{3}/,""); }
   function buildICS(data){
     var iana=ianaOf(data.tz);
-    var st=(data.start||"19:00").split(":").map(Number), sh=st[0], sm=st[1];
-    var en=(data.end||"22:00").split(":").map(Number), eh=en[0], em=en[1];
+    var st=parseTime(data.start)||{h:19,m:0};
+    var en=parseTime(data.end)||{h:22,m:0};
     var L=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Landmark//Seminars//EN","CALSCALE:GREGORIAN"];
     data.dates.forEach(function(dt,i){
-      var sH=sh,sM=sm,eH=eh,eM=em;
-      if(dt.time){ var t=dt.time.split(":").map(Number); sH=t[0]; sM=t[1]; eH=t[0]+3; eM=t[1]; }
+      var sH=st.h,sM=st.m,eH=en.h,eM=en.m;
+      if(dt.time){ var t=parseTime(dt.time); if(t){ sH=t.h; sM=t.m; eH=t.h+3; eM=t.m; } }
       var s=zonedToUTC(dt.y,dt.m,dt.d,sH,sM,iana);
       var e=zonedToUTC(dt.y,dt.m,dt.d,eH,eM,iana);
       L.push("BEGIN:VEVENT","UID:"+data.eventId+"-s"+(i+1)+"@landmark","DTSTAMP:"+icsStamp(new Date()),
@@ -83,6 +88,7 @@
     return L.join("\r\n");
   }
   function downloadICS(data){
+    if(!datesValid(data.dates)) return;
     var blob=new Blob([buildICS(data)],{type:"text/calendar;charset=utf-8"});
     var a=document.createElement("a");
     a.href=URL.createObjectURL(blob);
@@ -97,7 +103,7 @@
   function cardData(card){
     var d=card.dataset;
     return {el:card,eventId:d.eventId,courseId:d.courseId,course:d.course,pattern:d.pattern,
-      dates:parseDates(d.dates),start:d.start,end:d.end,tz:d.tz,lang:d.lang,format:d.format,zoom:d.zoom};
+      dates:parseDates(d.dates),datesRaw:d.dates,start:d.start,end:d.end,tz:d.tz,lang:d.lang,format:d.format,zoom:d.zoom};
   }
 
   /* ---- merge feed -> dataset + visible bits (runs first) ---- */
@@ -118,7 +124,7 @@
       var eb=card.querySelector(".fc-eyebrow"), ti=card.querySelector(".fc-title");
       if(eb&&!eb.textContent) eb.textContent=t.eyebrow;
       if(ti&&!ti.textContent) ti.textContent=t.main;
-      var wd=card.querySelector(".when-dates"); if(wd&&!wd.textContent) wd.textContent=compactDates(parseDates(d.dates));
+      var wd=card.querySelector(".when-dates"); if(wd&&!wd.textContent) wd.textContent=dateLine(d.dates);
       var b=card.querySelector(".sem-badges");
       if(b&&!b.innerHTML){ var online=/online/i.test(d.format||""); b.innerHTML=online?'<span class="badge badge-online">Online</span>':'<span class="badge badge-inperson">In Person</span>'; }
       if(!d.country) card.dataset.country=countryFromTZ(d.tz);
@@ -167,9 +173,11 @@
     var set=function(id,val){var el=document.getElementById(id); if(el) el.textContent=val;};
     set("cmTitle",data.course);
     set("cmSub",(data.pattern||"")+(data.format?" · "+data.format:""));
-    set("ssCount",data.dates.length+" sessions"+(data.pattern?" · "+data.pattern.split(",")[0]:""));
-    set("ssRange",rangeLabel(data.dates));
-    set("ssDates",compactDates(data.dates));
+    var validDates=datesValid(data.dates);
+    var count=validDates?data.dates.length:rawDateLine(data.datesRaw).split(",").filter(Boolean).length;
+    set("ssCount",count+" sessions"+(data.pattern?" · "+data.pattern.split(",")[0]:""));
+    set("ssRange",validDates?rangeLabel(data.dates):"");
+    set("ssDates",validDates?compactDates(data.dates):rawDateLine(data.datesRaw));
     var ex=document.getElementById("exceptionCheck"); if(ex) ex.checked=false;
     var re=document.getElementById("regEvent"); if(re) re.value=data.eventId||"";
     var rc=document.getElementById("regCourse"); if(rc) rc.value=data.courseId||"";
@@ -185,6 +193,7 @@
     var st=document.getElementById("successText"); if(st) st.textContent=d.course+" – "+(d.pattern||"")+".";
     var rf=document.getElementById("regForm"); if(rf) rf.style.display="none";
     var cs=document.getElementById("confirmSuccess"); if(cs) cs.classList.add("show");
+    var addBtn=document.getElementById("addCalBtn"); if(addBtn) addBtn.style.display=datesValid(d.dates)?"":"none";
     return false;
   }
 
