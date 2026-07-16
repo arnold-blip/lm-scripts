@@ -135,8 +135,12 @@
      Move the modal up to <body> so it covers the whole viewport. */
   function relocateModal(){
     if(modalMoved) return;
-    var ov=document.getElementById("confirmOverlay");
-    if(ov){ if(ov.parentNode!==document.body) document.body.appendChild(ov); modalMoved=true; }
+    var ovs=document.querySelectorAll("#confirmOverlay");
+    if(!ovs.length) return;
+    var keep=ovs[0];                                                   // OP renders responsive copies of the block
+    for(var i=1;i<ovs.length;i++){ if(ovs[i].parentNode) ovs[i].parentNode.removeChild(ovs[i]); }  // drop the extras so getElementById is unambiguous
+    if(keep.parentNode!==document.body) document.body.appendChild(keep);
+    modalMoved=true;
   }
   function run(){
     relocateModal();
