@@ -106,29 +106,34 @@
       dates:parseDates(d.dates),datesRaw:d.dates,start:d.start,end:d.end,tz:d.tz,lang:d.lang,format:d.format,zoom:d.zoom};
   }
 
-  /* ---- merge feed -> dataset + visible bits (runs first) ---- */
-  function hydrateSeminarCards(){
-    document.querySelectorAll(".sem-card").forEach(function(card){
-      var mf=function(k){var el=card.querySelector(".mf-"+k);return el?(el.textContent||"").trim():"";};
-      ["eventId","courseId","course","image","desc","pattern","dates","start","end","tz","lang","format","zoom"]
-        .forEach(function(k){ card.dataset[k]=mf(k); });
-      var img=card.querySelector(".sem-photo"); if(img){ img.src=card.dataset.image; img.alt=card.dataset.course; }
-      var back=card.querySelector(".flip-back p"); if(back&&!back.textContent) back.textContent=card.dataset.desc;
-      var wd=card.querySelector(".when-day"); if(wd&&!wd.textContent) wd.textContent=card.dataset.pattern;
-      var lg=card.querySelector(".sem-lang"); if(lg&&!lg.textContent) lg.textContent="Delivered in: "+card.dataset.lang+".";
-    });
+  /* ---- fill one card from its merge feed; skip if already done or not yet resolved ---- */
+  function fillCard(card){
+    if(card.getAttribute("data-ready")==="1") return;
+    var mf=function(k){var el=card.querySelector(".mf-"+k);return el?(el.textContent||"").trim():"";};
+    var keys=["eventId","courseId","course","image","desc","pattern","dates","start","end","tz","lang","format","zoom"];
+    var anyData=false;
+    keys.forEach(function(k){ var v=mf(k); card.dataset[k]=v; if(v) anyData=true; });
+    if(!anyData) return; // merge not resolved yet — leave unready so a retry re-attempts
+    var img=card.querySelector(".sem-photo"); if(img&&card.dataset.image){ img.src=card.dataset.image; img.alt=card.dataset.course; }
+    var back=card.querySelector(".flip-back p"); if(back&&!back.textContent) back.textContent=card.dataset.desc;
+    var wday=card.querySelector(".when-day"); if(wday&&!wday.textContent) wday.textContent=card.dataset.pattern;
+    var lg=card.querySelector(".sem-lang"); if(lg&&!lg.textContent) lg.textContent="Delivered in: "+card.dataset.lang+".";
+    var t=splitTitle(card.dataset.course);
+    var eb=card.querySelector(".fc-eyebrow"), ti=card.querySelector(".fc-title");
+    if(eb&&!eb.textContent) eb.textContent=t.eyebrow;
+    if(ti&&!ti.textContent) ti.textContent=t.main;
+    var wd=card.querySelector(".when-dates"); if(wd&&!wd.textContent) wd.textContent=dateLine(card.dataset.dates);
+    var b=card.querySelector(".sem-badges");
+    if(b&&!b.innerHTML){ var online=/online/i.test(card.dataset.format||""); b.innerHTML=online?'<span class="badge badge-online">Online</span>':'<span class="badge badge-inperson">In Person</span>'; }
+    if(!card.dataset.country) card.dataset.country=countryFromTZ(card.dataset.tz);
+    card.setAttribute("data-ready","1");
   }
-  function enhanceCards(){
-    document.querySelectorAll(".sem-card").forEach(function(card){
-      var d=card.dataset, t=splitTitle(d.course);
-      var eb=card.querySelector(".fc-eyebrow"), ti=card.querySelector(".fc-title");
-      if(eb&&!eb.textContent) eb.textContent=t.eyebrow;
-      if(ti&&!ti.textContent) ti.textContent=t.main;
-      var wd=card.querySelector(".when-dates"); if(wd&&!wd.textContent) wd.textContent=dateLine(d.dates);
-      var b=card.querySelector(".sem-badges");
-      if(b&&!b.innerHTML){ var online=/online/i.test(d.format||""); b.innerHTML=online?'<span class="badge badge-online">Online</span>':'<span class="badge badge-inperson">In Person</span>'; }
-      if(!d.country) card.dataset.country=countryFromTZ(d.tz);
-    });
+  var filtersReady=false;
+  function run(){
+    var cards=document.querySelectorAll(".sem-card");
+    if(!cards.length) return;
+    cards.forEach(fillCard);
+    if(!filtersReady && document.querySelectorAll("#othersGrid .sem-card").length){ populateFilters(); applyFilters(); filtersReady=true; }
   }
 
   /* ---- filters (Other grid) ---- */
@@ -212,7 +217,13 @@
   document.addEventListener("change",function(e){ if(e.target.id==="countryFilter"||e.target.id==="langFilter") applyFilters(); });
   document.addEventListener("keydown",function(e){ if(e.key==="Escape") closeConfirm(); });
 
-  /* ---- init ---- */
-  function init(){ hydrateSeminarCards(); enhanceCards(); populateFilters(); applyFilters(); }
-  if(document.readyState!=="loading") init(); else document.addEventListener("DOMContentLoaded",init);
+  /* ---- init: run on ready + on load + retries + observe for late/re-rendered cards ---- */
+  if(document.readyState!=="loading") run(); else document.addEventListener("DOMContentLoaded",run);
+  window.addEventListener("load",run);
+  [200,600,1200,2500,4000].forEach(function(ms){ setTimeout(run,ms); });
+  if(window.MutationObserver){
+    var _t=null;
+    new MutationObserver(function(){ if(_t) return; _t=setTimeout(function(){ _t=null; run(); },150); })
+      .observe(document.body,{childList:true,subtree:true});
+  }
 })();
