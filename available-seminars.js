@@ -32,6 +32,8 @@
  * ========================================================================== */
 (function () {
   'use strict';
+  if (window.__lmSeminarsInit) return;   // if the script is loaded twice, only the first copy runs
+  window.__lmSeminarsInit = true;
 
   var MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
@@ -180,9 +182,9 @@
   }
 
   /* ---- confirm modal ---- */
-  var currentData=null;
+  var currentData=null, submitting=false;
   function openConfirm(cardEl){
-    var data=cardData(cardEl); currentData=data;
+    var data=cardData(cardEl); currentData=data; submitting=false;
     var set=function(id,val){var el=document.getElementById(id); if(el) el.textContent=val;};
     set("cmTitle",data.course);
     set("cmSub",(data.pattern||"")+(data.format?" · "+data.format:""));
@@ -210,17 +212,24 @@
   }
   function confirmSelection(e){
     if(e) e.preventDefault();
+    if(submitting) return false;                     // block double-fire within one instance
     var d=currentData; if(!d) return false;
     var cEl=document.getElementById("visitingContactId");
-    var payload={ contactId:cEl?(cEl.textContent||"").trim():"", eventId:d.eventId||"", courseId:d.courseId||"",
+    var contactId=cEl?(cEl.textContent||"").trim():"";
+    if(!contactId || /[\[\]]/.test(contactId)){       // empty or unresolved merge token -> don't create a contact-less record
+      window.alert("We couldn't identify your account. Please refresh the page and try again.");
+      return false;
+    }
+    var payload={ contactId:contactId, eventId:d.eventId||"", courseId:d.courseId||"",
       cantAttendFirst:(document.getElementById("exceptionCheck")||{}).checked?1:0, course:d.course||"", pattern:d.pattern||"" };
     var btn=document.querySelector("#regForm .btn-confirm");
     if(!WEBHOOK_URL){ showSuccess(d); return false; }
+    submitting=true;
     if(btn){ btn.disabled=true; btn.textContent="Booking..."; }
     fetch(WEBHOOK_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)})
       .then(function(r){ if(!r.ok) throw new Error("http "+r.status); return r.text(); })
       .then(function(){ showSuccess(d); })
-      .catch(function(){ if(btn){ btn.disabled=false; btn.textContent="Confirm My Seminar"; } window.alert("Sorry, something went wrong booking your seminar. Please try again."); });
+      .catch(function(){ submitting=false; if(btn){ btn.disabled=false; btn.textContent="Confirm My Seminar"; } window.alert("Sorry, something went wrong booking your seminar. Please try again."); });
     return false;
   }
 
