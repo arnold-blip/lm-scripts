@@ -128,8 +128,16 @@
     if(!card.dataset.country) card.dataset.country=countryFromTZ(card.dataset.tz);
     card.setAttribute("data-ready","1");
   }
-  var filtersReady=false;
+  var filtersReady=false, modalMoved=false;
+  /* OP wraps blocks in transformed containers, which traps a position:fixed overlay inside the block.
+     Move the modal up to <body> so it covers the whole viewport. */
+  function relocateModal(){
+    if(modalMoved) return;
+    var ov=document.getElementById("confirmOverlay");
+    if(ov){ if(ov.parentNode!==document.body) document.body.appendChild(ov); modalMoved=true; }
+  }
   function run(){
+    relocateModal();
     var cards=document.querySelectorAll(".sem-card");
     if(!cards.length) return;
     cards.forEach(fillCard);
