@@ -1,5 +1,5 @@
 /* ============================================================================
- * LM : REG : Forum Info Form — Contact From URL (script)  [PILOT]
+ * LM : REG : Forum Info Form — Contact From URL (script)  [PILOT]   v2
  * Host at: https://arnold-blip.github.io/lm-scripts/forum-info-contact-from-url.js
  *
  * WHAT THIS DOES:
@@ -17,11 +17,24 @@
  *   for both the post-checkout redirect AND the "you forgot to fill it out"
  *   reminder emails.
  *
- * WHY it overwrites unconditionally (not just when blank):
- *   The URL value is the person who just paid / who the email was sent to, so
- *   it is authoritative. This also cures the same-browser couple/session bug,
- *   where a second registration mis-linked to the first person's cookie. The
- *   URL wins over the cookie, so the right person is linked every time.
+ * v2 FIX — the "+" in email addresses:
+ *   URLSearchParams follows form-encoding rules, where a literal "+" in the
+ *   query string decodes to a SPACE. So cemail=a+b@gmail.com arrived as
+ *   "a b@gmail.com" — an invalid address. Ontraport could not match it, and
+ *   combined with a bad cuid it created a blank contact + duplicate
+ *   registration. We now read the raw query string and use decodeURIComponent
+ *   only, which leaves "+" intact. Email addresses cannot contain spaces, so
+ *   treating "+" as a literal plus is always correct here.
+ *
+ * !! THE LINK MATTERS AS MUCH AS THIS SCRIPT !!
+ *   cuid MUST be the CONTACT's unique id, not the Registration's. In a
+ *   Registration-context email, [Unique ID] resolves to the REGISTRATION —
+ *   which no contact will ever match, so Ontraport creates a new blank
+ *   contact. You must use the relationship hop:
+ *
+ *     ?cuid=[Contact//Unique ID]&cemail=[Contact//Email]&cfirstname=[Contact//First Name]
+ *
+ *   Insert each token with the merge-field picker; typed tokens post literally.
  *
  * PARAM NAMES:
  *   cuid / cemail are used on purpose. Ontraport already ships its own hidden
@@ -37,6 +50,24 @@
 (function () {
   'use strict';
 
+  // Read a query param WITHOUT the "+" -> space conversion that
+  // URLSearchParams performs. Also strips zero-width junk that has been
+  // observed in the source contact data.
+  function rawParam(name) {
+    var m = new RegExp('[?&]' + name + '=([^&#]*)').exec(window.location.search);
+    if (!m) return '';
+    var value;
+    try {
+      value = decodeURIComponent(m[1]);
+    } catch (e) {
+      return ''; // malformed encoding — post nothing rather than garbage
+    }
+    return value
+      .replace(/[​-‍⁠﻿]/g, '')
+      .replace(/[\p{Cf}\p{Cc}]/gu, '')
+      .trim();
+  }
+
   function setHidden(name, value) {
     if (!value) return;
     var els = document.getElementsByName(name);
@@ -46,9 +77,8 @@
   }
 
   function apply() {
-    var p = new URLSearchParams(window.location.search);
-    setHidden('f2213//unique_id', p.get('cuid'));   // Contact
-    setHidden('f2674', p.get('cemail'));            // Email
+    setHidden('f2213//unique_id', rawParam('cuid'));   // Contact
+    setHidden('f2674', rawParam('cemail'));            // Email
   }
 
   // Run now (footer script — the form inputs already exist), again on DOM

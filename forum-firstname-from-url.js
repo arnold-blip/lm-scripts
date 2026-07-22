@@ -1,5 +1,5 @@
 /*!
- * forum-firstname-from-url.js
+ * forum-firstname-from-url.js  (v2)
  * Landmark Forum — Step 02 Success page (REG : Checkout : Step 02 Success + T&C's).
  *
  * Personalizes the greeting: replaces the default "Friend" with the buyer's
@@ -8,11 +8,15 @@
  *
  *   https://lm.landmarkworldwide.com/registration-confirmed?cuid=[Unique ID]&cemail=[Email]&cfirstname=[First Name]
  *
- * Ontraport swaps [First Name] for the real value at send time, so the page
+ * Ontraport swaps the merge field for the real value at send time, so the page
  * only has to read the "cfirstname" query parameter.
  *
  * REQUIRED PAGE MARKUP (leave this in the Footer Code, inline):
  *   <span id="lm-first-name">Friend</span>
+ *
+ * v2: strips zero-width / invisible junk characters (U+200B etc.) that were
+ * present in the source First Name data and were causing the value to be
+ * rejected and fall back to "Friend".
  *
  * Safe by design:
  *   - writes with textContent, never innerHTML (URL values are untrusted)
@@ -33,7 +37,14 @@
       return; // very old browser without URLSearchParams — keep "Friend"
     }
 
-    var name = raw.trim();
+    // Clean the incoming value. The source data contained repeated zero-width
+    // spaces (U+200B) after the name, which is why v1 rejected it.
+    var name = raw
+      .replace(/[​-‍⁠﻿]/g, '') // zero-width space, ZWNJ, ZWJ, word joiner, BOM
+      .replace(/[\p{Cf}\p{Cc}]/gu, '')             // any remaining format / control chars
+      .replace(/\s+/g, ' ')                        // collapse runs of whitespace
+      .trim();
+
     if (!name || name.length > 40) return;               // missing or junk -> keep "Friend"
     if (!/^[\p{L}\p{M}'’.\- ]+$/u.test(name)) return;     // letters, marks, apostrophes, hyphens, spaces only
 
