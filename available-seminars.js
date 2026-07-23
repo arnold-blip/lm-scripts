@@ -117,7 +117,18 @@
     keys.forEach(function(k){ var v=mf(k); card.dataset[k]=v; if(v) anyData=true; });
     if(!anyData) return; // merge not resolved yet — leave unready so a retry re-attempts
     var img=card.querySelector(".sem-photo"); if(img&&card.dataset.image){ img.src=card.dataset.image; img.alt=card.dataset.course; }
-    var back=card.querySelector(".flip-back p"); if(back&&!back.textContent) back.textContent=card.dataset.desc;
+    /* rebuild the flip-back as ONE clean paragraph: pull the raw description, turn block/line breaks
+       into spaces (so words never run together), strip the rest, and drop it into a single <p>.
+       This lets the CSS vertically-center + line-clamp it exactly like the reference. */
+    var back=card.querySelector(".flip-back");
+    if(back){
+      var mfd=card.querySelector(".mf-desc");
+      var src=mfd?(mfd.innerHTML||""):(card.dataset.desc||"");
+      var tmp=document.createElement("div");
+      tmp.innerHTML=src.replace(/<\/(p|li|div|ul|ol|h[1-6])>/gi," ").replace(/<br\s*\/?>/gi," ");
+      var clean=(tmp.textContent||"").replace(/\s+/g," ").trim();
+      if(clean){ back.innerHTML=""; var bp=document.createElement("p"); bp.textContent=clean; back.appendChild(bp); }
+    }
     var wday=card.querySelector(".when-day"); if(wday&&!wday.textContent) wday.textContent=card.dataset.pattern;
     var lg=card.querySelector(".sem-lang"); if(lg&&!lg.textContent) lg.textContent="Delivered in: "+card.dataset.lang+".";
     var t=splitTitle(card.dataset.course);
