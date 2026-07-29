@@ -168,7 +168,7 @@
   }
 
   document.addEventListener('click', function(e){
-    var t = (e.target && e.target.closest) ? e.target.closest('[data-fj-support]') : null;
+    var t = (e.target && e.target.closest) ? e.target.closest('[data-fj-support], .fj-support-trigger, .data-fj-support') : null;
     if (!t) return;
     e.preventDefault();
     bind();
