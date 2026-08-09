@@ -51,10 +51,6 @@
   var MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   var DAY = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
   var MONTH_IDX = {jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
-  /* Longest line in Kate's reference is 52 chars ("Jul 20, 27, Aug 3, 10, 17, 24, 31, Sep 14, 28, Oct 5"),
-     which sits on two lines in the card. Past this we collapse to a range so the list can never
-     run off the card the way "THURSDAY, 10 SEP 2026 THURSDAY, 17 SEP 2026 …" did. */
-  var MAX_DATE_CHARS = 64;
   /* Anything longer than this in the blurb feed is the full rich-text Course Description,
      not a Course Card Description — treat it as the long fallback. */
   var CARD_DESC_MAX = 420;
@@ -129,13 +125,14 @@
   function datesTyped(dates){ return datesValid(dates) && dates.every(function(o){ return !o.guessed; }); }
   function rawDateLine(raw){ return String(raw==null?"":raw).replace(/<[^>]*>/g," ").split(/[\n,]+/).map(function(s){return s.trim();}).filter(Boolean).join(", "); }
   function parseTime(str){ var m=(str||"").trim().match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i); if(!m) return null; var h=parseInt(m[1],10), mi=m[2]?parseInt(m[2],10):0, ap=(m[3]||"").toLowerCase(); if(ap==="pm"&&h<12)h+=12; if(ap==="am"&&h===12)h=0; return {h:h,m:mi}; }
-  /* ---- date display: reference format "Jul 20, 27, Aug 3, …"; collapse to a range once it overflows ---- */
+  /* ---- date display on the CARD ----
+     Kate, 2026-08: "you've got all the dates listed here, that's not right … only once somebody
+     clicks here should it list all the dates." So the card carries the meeting pattern plus the
+     span ("Sep 10 – Dec 3"), and the full session list lives in the confirm modal behind Select. */
   function dateLine(raw){
     var p=parseDates(raw);
     if(!datesValid(p)) return rawDateLine(raw);      // partial/unparseable -> show it exactly as typed
-    var full=compactDates(p);
-    if(full.length<=MAX_DATE_CHARS) return full;
-    return rangeLabel(p)+" · "+p.length+" sessions";
+    return rangeLabel(p);
   }
   /* fallback for a blank Event Meeting Pattern, so the card never shows an empty bold line */
   function dayLine(dates,start){
