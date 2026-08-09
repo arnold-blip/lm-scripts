@@ -213,11 +213,20 @@
   /* ---- fill one card from its merge feed; skip if already done or not yet resolved ---- */
   function fillCard(card){
     if(card.getAttribute("data-ready")==="1") return;
-    var mf=function(k){var el=card.querySelector(".mf-"+k);return el?(el.textContent||"").trim():"";};
+    /* val() here, not raw text: an unresolved feed hands back the literal "[Block//…]" token, and
+       anything downstream that consumed it did real damage — img.src="[Block//Course//Course Image
+       ##link]" fired a 404, and splitTitle() found no colon in the token so the whole thing landed
+       in the coral line. Treat a token as no data. */
+    var mf=function(k){var el=card.querySelector(".mf-"+k);return el?val(el.textContent):"";};
     var keys=["eventId","courseId","course","image","desc","descshort","cardDesc","pattern","dates","start","end","tz","lang","format","zoom"];
     var anyData=false;
     keys.forEach(function(k){ var v=mf(k); card.dataset[k]=v; if(v) anyData=true; });
-    if(!anyData) return; // merge not resolved yet — leave unready so a retry re-attempts
+    var ebEl=card.querySelector(".fc-eyebrow");
+    /* Fall back to whatever OP rendered into the card itself. On this page the block sometimes
+       carries the course name and description inline instead of through .mf-* spans, and with no
+       feed at all we would otherwise blank a card that was rendering fine. */
+    if(!card.dataset.course) card.dataset.course=val(ebEl?ebEl.textContent:"");
+    if(!anyData && !card.dataset.course) return;   // nothing to work with — stay unready so a retry re-attempts
     var img=card.querySelector(".sem-photo"); if(img&&card.dataset.image){ img.src=card.dataset.image; img.alt=card.dataset.course; }
     /* rebuild the flip-back as ONE clean paragraph. Prefer Course Card Description (the field the
        AI automation writes: one sentence, one <strong> phrase) and keep its bold; otherwise fall back
@@ -225,44 +234,50 @@
     var back=card.querySelector(".flip-back");
     if(back){
       var mfs=backSource(card);
-      var shortHtml=unwrapTags(mfs?(mfs.innerHTML||""):"");
+      /* No usable feed? Use whatever OP already rendered into the back. Length decides the
+         treatment, not which span it came from: a blurb gets centred with its bold intact,
+         a full rich-text description gets flattened and faded. */
+      var srcHtml=unwrapTags(mfs?(mfs.innerHTML||""):(back.innerHTML||""));
+      var probe=document.createElement("div");
+      probe.innerHTML=srcHtml.replace(/<\/(p|li|div|ul|ol|h[1-6])>/gi," ").replace(/<br\s*\/?>/gi," ");
+      var plain=(probe.textContent||"").replace(/\s+/g," ").trim();
       var bp;
-      if(shortHtml){
+      if(plain && plain.length<=CARD_DESC_MAX){
         back.innerHTML=""; bp=document.createElement("p");
-        bp.innerHTML=shortHtml.replace(/<(?!\/?(strong|b|em|i)\b)[^>]*>/gi,"").replace(/\s+/g," ").trim();
+        bp.innerHTML=srcHtml.replace(/<(?!\/?(strong|b|em|i)\b)[^>]*>/gi,"").replace(/\s+/g," ").trim();
         back.appendChild(bp);
-        card.classList.add("has-short-desc");   // lets the CSS drop the fade-out meant for the long description
-      } else {
-        var mfd=card.querySelector(".mf-desc");
-        var src=mfd?(mfd.innerHTML||""):(card.dataset.desc||"");
-        var tmp=document.createElement("div");
-        tmp.innerHTML=src.replace(/<\/(p|li|div|ul|ol|h[1-6])>/gi," ").replace(/<br\s*\/?>/gi," ");
-        var plain=(tmp.textContent||"").replace(/\s+/g," ").trim();
-        if(plain){ back.innerHTML=""; bp=document.createElement("p"); bp.textContent=plain; back.appendChild(bp); }
+        card.classList.add("has-short-desc");   // lets the CSS centre it and drop the long-description fade
+      } else if(plain){
+        back.innerHTML=""; bp=document.createElement("p"); bp.textContent=plain; back.appendChild(bp);
+        card.classList.remove("has-short-desc");
       }
     }
     /* Dates + language are rewritten, not filled-only: on the live page the block feeds the raw merge
        straight into these elements, so "fill only when empty" left Kate looking at
        "THURSDAY, 10 SEP 2026 …" and "Delivered in: .". */
-    var dsrc=val(card.dataset.dates) || val((card.querySelector(".when-dates")||{}).textContent);
+    /* Only ever WRITE a line we have a value for. Blanking on missing data is what emptied the
+       meeting pattern, the date list and the language line when the feed stopped resolving. */
+    var dsrc=card.dataset.dates || val((card.querySelector(".when-dates")||{}).textContent);
     var parsed=parseDates(dsrc);
-    var wd=card.querySelector(".when-dates"); if(wd) wd.textContent=dsrc?dateLine(dsrc):"";
+    var wd=card.querySelector(".when-dates"); if(wd && dsrc) wd.textContent=dateLine(dsrc);
     var wday=card.querySelector(".when-day");
     if(wday){
-      var pat=val(card.dataset.pattern) || val(wday.textContent) || dayLine(parsed,card.dataset.start);
-      wday.textContent=pat;
+      var pat=card.dataset.pattern || val(wday.textContent) || dayLine(parsed,card.dataset.start);
+      if(pat) wday.textContent=pat;
       wday.style.display=pat?"":"none";
     }
     var lg=card.querySelector(".sem-lang");
     if(lg){
-      var lang=val(card.dataset.lang);
-      lg.textContent=lang?("Delivered in: "+lang+"."):"";
-      lg.style.display=lang?"":"none";                    // no more orphan "Delivered in: ."
+      var lang=card.dataset.lang;
+      if(lang) lg.textContent="Delivered in: "+lang+".";
+      lg.style.display=lang?"":"none";                    // no orphan "Delivered in: ."
     }
+    /* Split the caption even when the name was rendered inline by OP — that is why the whole
+       "Breakthroughs: Living Outside the Box" sat in the coral line with no white subtext. */
     var t=splitTitle(card.dataset.course);
-    var eb=card.querySelector(".fc-eyebrow"), ti=card.querySelector(".fc-title");
-    if(eb&&!eb.textContent) eb.textContent=t.eyebrow;
-    if(ti&&!ti.textContent) ti.textContent=t.main;
+    var eb=ebEl, ti=card.querySelector(".fc-title");
+    if(eb && t.eyebrow) eb.textContent=t.eyebrow;
+    if(ti && t.main) ti.textContent=t.main;
     /* size bucket for the coral headline — long names like BREAKTHROUGHS: LIVING OUTSIDE THE BOX
        step down instead of blowing out of the photo (CSS drives the actual sizes) */
     if(eb){ var n=(eb.textContent||"").trim().length; eb.setAttribute("data-len", n<=11?"s":n<=17?"m":n<=25?"l":"xl"); }
@@ -351,9 +366,13 @@
     set("cmSub",(data.pattern||"")+(data.format?" · "+data.format:""));
     var validDates=datesValid(data.dates);
     var count=validDates?data.dates.length:rawDateLine(data.datesRaw).split(",").filter(Boolean).length;
-    set("ssCount",count+" sessions"+(data.pattern?" · "+data.pattern.split(",")[0]:""));
+    set("ssCount",count?(count+" sessions"+(data.pattern?" · "+data.pattern.split(",")[0]:"")):"");
     set("ssRange",validDates?rangeLabel(data.dates):"");
     set("ssDates",validDates?compactDates(data.dates):rawDateLine(data.datesRaw));
+    /* With no session data there is nothing to summarise — collapse the panel rather than
+       showing an empty grey slab. */
+    var ss=document.querySelector("#confirmOverlay .session-summary");
+    if(ss) ss.style.display=count?"":"none";
     var ex=document.getElementById("exceptionCheck"); if(ex) ex.checked=false;
     var re=document.getElementById("regEvent"); if(re) re.value=data.eventId||"";
     var rc=document.getElementById("regCourse"); if(rc) rc.value=data.courseId||"";
