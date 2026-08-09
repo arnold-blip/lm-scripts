@@ -452,8 +452,22 @@
   function closeConfirm(){ var o=mEl("confirmOverlay"); if(o) o.classList.remove("show"); document.body.style.overflow=""; }
   /* n8n webhook (SEM : Create Seminar Registration). Empty = show success without booking. */
   var WEBHOOK_URL="https://landmarkworldwide.awesomate.io/webhook/pilot-seminar-select";
+  /* Reference wording: "An Invented Life: My Life, My Design — Tuesdays at 7:00 PM Eastern Time,
+     starting Nov 3, 2026."  The meeting pattern is stored as "Tuesdays, 7:00 PM Eastern Time", so
+     the comma before a TIME becomes "at". Patterns that list days instead ("Friday, Saturday,
+     Sunday, and Tuesday") have no comma-then-digit, so they are left alone. */
+  function successLine(d){
+    var out=d.course||"";
+    var pat=(d.pattern||"").replace(/,\s*(?=\d)/," at ");
+    if(pat) out+=" — "+pat;
+    if(datesValid(d.dates)){ var f=d.dates[0]; out+=", starting "+MON[f.m-1]+" "+f.d+", "+f.y; }
+    return out+".";
+  }
   function showSuccess(d){
-    var st=mEl("successText"); if(st) st.textContent=d.course+" – "+(d.pattern||"")+".";
+    /* First name comes through its own hidden merge span, same pattern as the contact id. */
+    var fn=val((document.getElementById("visitingFirstName")||{}).textContent);
+    var h=mEl("successTitle"); if(h) h.textContent="You're in"+(fn?", "+fn:"")+".";
+    var st=mEl("successText"); if(st) st.textContent=successLine(d);
     var rf=mEl("regForm"); if(rf) rf.style.display="none";
     var cs=mEl("confirmSuccess"); if(cs) cs.classList.add("show");
     var addBtn=mEl("addCalBtn"); if(addBtn) addBtn.style.display=datesTyped(d.dates)?"":"none";
