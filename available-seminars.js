@@ -183,6 +183,11 @@
   function splitTitle(name){ var i=(name||"").indexOf(":"); return i===-1?{eyebrow:name,main:""}:{eyebrow:name.slice(0,i).trim(),main:name.slice(i+1).trim()}; }
   /* trimmed value, or "" if the merge came back unresolved ("[Block//…]") — never paint a token */
   function val(s){ s=String(s==null?"":s).replace(/\s+/g," ").trim(); return /[\[\]]/.test(s)?"":s; }
+  /* Event Language (Events f2321) is a dropdown, so OP merges either the label ("English") or the
+     bare option id ("137") depending on how the block builds the token. Map the ids so the card
+     reads the same either way. Option list verified against the account 2026-08-09. */
+  var LANG_BY_ID={"134":"Hindi","135":"English (with Hindi as needed)","136":"Thai","137":"English"};
+  function langLabel(v){ v=val(v); return LANG_BY_ID[v]||v; }
   /* OP sometimes delivers the field HTML-escaped; put <strong>/<em> back so the blurb can bold a phrase */
   function unwrapTags(s){
     s=String(s==null?"":s);
@@ -277,7 +282,7 @@
     }
     var lg=card.querySelector(".sem-lang");
     if(lg){
-      var lang=card.dataset.lang;
+      var lang=langLabel(card.dataset.lang);
       if(lang) set(lg,"Delivered in: "+lang+".");
       if(lg.style.display!==(lang?"":"none")) lg.style.display=lang?"":"none";   // no orphan "Delivered in: ."
     }
