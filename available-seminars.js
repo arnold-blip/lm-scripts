@@ -301,7 +301,14 @@
     if(!card.dataset.country) card.dataset.country=countryFromTZ(card.dataset.tz);
     if(card.getAttribute("data-ready")!=="1") card.setAttribute("data-ready","1");   // status flag only — guarded so it can't retrigger the observer
   }
-  var filtersReady=false;
+  var filtersReady=false, modalRoot=null;
+  /* Always resolve modal fields INSIDE the live overlay. document.getElementById() picks the first
+     match in the document, and OP can re-render a second copy of the block at any time — one stale
+     duplicate and every value lands somewhere invisible. */
+  function mEl(id){
+    var root=(modalRoot&&modalRoot.parentNode)?modalRoot:document;
+    return root.querySelector("#"+id) || document.getElementById(id);
+  }
   /* OP wraps blocks in transformed containers, which traps a position:fixed overlay inside the
      block — a later opt-row then paints straight over the modal's dark header. Move the modal up
      to <body> so it covers the whole viewport.
@@ -323,10 +330,17 @@
        the element stops matching #confirmOverlay, so the next pass never sees it again. */
     for(var j=0;j<ovs.length;j++){
       if(ovs[j]===keep) continue;
+      /* Strip the ids of the DESCENDANTS too, not just the overlay. getElementById returns the
+         first match in document order, and the live copy is appended last — so leaving #cmTitle,
+         #ssCount, #ssRange, #ssDates on a buried duplicate meant every value was written into the
+         hidden copy and the visible modal stayed blank. */
+      var inner=ovs[j].querySelectorAll("[id]");
+      for(var k=0;k<inner.length;k++) inner[k].removeAttribute("id");
       ovs[j].removeAttribute("id");
       ovs[j].style.display="none";
     }
     if(keep.parentNode!==document.body) document.body.appendChild(keep);
+    modalRoot=keep;
     if(keep.style.zIndex!=="99999") keep.style.zIndex="99999";         // out-rank every opt-row
   }
   function run(){
@@ -388,22 +402,22 @@
        showing an empty grey slab. */
     var ss=document.querySelector("#confirmOverlay .session-summary");
     if(ss) ss.style.display=count?"":"none";
-    var ex=document.getElementById("exceptionCheck"); if(ex) ex.checked=false;
-    var re=document.getElementById("regEvent"); if(re) re.value=data.eventId||"";
-    var rc=document.getElementById("regCourse"); if(rc) rc.value=data.courseId||"";
-    var rf=document.getElementById("regForm"); if(rf) rf.style.display="";
-    var cs=document.getElementById("confirmSuccess"); if(cs) cs.classList.remove("show");
-    var ov=document.getElementById("confirmOverlay"); if(ov) ov.classList.add("show");
+    var ex=mEl("exceptionCheck"); if(ex) ex.checked=false;
+    var re=mEl("regEvent"); if(re) re.value=data.eventId||"";
+    var rc=mEl("regCourse"); if(rc) rc.value=data.courseId||"";
+    var rf=mEl("regForm"); if(rf) rf.style.display="";
+    var cs=mEl("confirmSuccess"); if(cs) cs.classList.remove("show");
+    var ov=mEl("confirmOverlay"); if(ov) ov.classList.add("show");
     document.body.style.overflow="hidden";
   }
-  function closeConfirm(){ var o=document.getElementById("confirmOverlay"); if(o) o.classList.remove("show"); document.body.style.overflow=""; }
+  function closeConfirm(){ var o=mEl("confirmOverlay"); if(o) o.classList.remove("show"); document.body.style.overflow=""; }
   /* n8n webhook (SEM : Create Seminar Registration). Empty = show success without booking. */
   var WEBHOOK_URL="https://landmarkworldwide.awesomate.io/webhook/pilot-seminar-select";
   function showSuccess(d){
-    var st=document.getElementById("successText"); if(st) st.textContent=d.course+" – "+(d.pattern||"")+".";
-    var rf=document.getElementById("regForm"); if(rf) rf.style.display="none";
-    var cs=document.getElementById("confirmSuccess"); if(cs) cs.classList.add("show");
-    var addBtn=document.getElementById("addCalBtn"); if(addBtn) addBtn.style.display=datesTyped(d.dates)?"":"none";
+    var st=mEl("successText"); if(st) st.textContent=d.course+" – "+(d.pattern||"")+".";
+    var rf=mEl("regForm"); if(rf) rf.style.display="none";
+    var cs=mEl("confirmSuccess"); if(cs) cs.classList.add("show");
+    var addBtn=mEl("addCalBtn"); if(addBtn) addBtn.style.display=datesTyped(d.dates)?"":"none";
   }
   function confirmSelection(e){
     if(e) e.preventDefault();
@@ -416,7 +430,7 @@
       return false;
     }
     var payload={ contactId:contactId, eventId:d.eventId||"", courseId:d.courseId||"",
-      cantAttendFirst:(document.getElementById("exceptionCheck")||{}).checked?1:0, course:d.course||"", pattern:d.pattern||"" };
+      cantAttendFirst:(mEl("exceptionCheck")||{}).checked?1:0, course:d.course||"", pattern:d.pattern||"" };
     var btn=document.querySelector("#regForm .btn-confirm");
     if(!WEBHOOK_URL){ showSuccess(d); return false; }
     submitting=true;
