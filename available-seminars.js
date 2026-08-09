@@ -350,14 +350,14 @@
     var cards=document.querySelectorAll(".sem-card");
     if(!cards.length) return;
     cards.forEach(fillCard);
-    if(!filtersReady && document.querySelectorAll("#othersGrid .sem-card").length){ populateFilters(); applyFilters(); filtersReady=true; }
+    if(!filtersReady && othersCards().length){ populateFilters(); applyFilters(); filtersReady=true; }
   }
 
   /* ---- filters (Other grid) ---- */
   function populateFilters(){
     var cSel=document.getElementById("countryFilter"), lSel=document.getElementById("langFilter");
     if(!cSel||!lSel) return;
-    var cards=Array.prototype.slice.call(document.querySelectorAll("#othersGrid .sem-card"));
+    var cards=Array.prototype.slice.call(othersCards());
     var uniq=function(a){return a.filter(function(v,i){return a.indexOf(v)===i;});};
     var countries=uniq(cards.map(function(c){return c.dataset.country;})).sort();
     countries=["United States"].concat(countries.filter(function(c){return c!=="United States";}));
@@ -373,19 +373,29 @@
     cf.classList.toggle("selected",country!=="all");
     document.getElementById("langFilter").classList.toggle("selected",lang!=="all");
     var vis=0;
-    document.querySelectorAll("#othersGrid .sem-card").forEach(function(card){
+    Array.prototype.forEach.call(othersCards(),function(card){
       var show=(country==="all"||card.dataset.country===country)&&(lang==="all"||card.dataset.lang===lang);
       card.classList.toggle("hidden",!show); if(show)vis++;
     });
     var nr=document.getElementById("noResults"); if(nr) nr.classList.toggle("show",vis===0);
   }
+  /* The "other seminars" grid is usually its own Ontraport block, so a custom HTML block cannot
+     wrap it and #othersBody cannot contain it. Resolve it by id OR by the lm-others class that
+     gets put on the OP block itself. */
+  function othersGridEl(){ return document.querySelector("#othersGrid, .lm-others"); }
+  function othersCards(){ var g=othersGridEl(); return g?g.querySelectorAll(".sem-card"):[]; }
   function toggleOthers(){
-    var body=document.getElementById("othersBody"), head=document.getElementById("othersToggle");
-    if(!body||!head) return;
-    var open=body.classList.toggle("open"); head.classList.toggle("open",open);
+    var head=document.getElementById("othersToggle");
+    if(!head) return;
+    var open=!head.classList.contains("open");
+    head.classList.toggle("open",open);
     head.setAttribute("aria-expanded",open);
+    var body=document.getElementById("othersBody"); if(body) body.classList.toggle("open",open);
+    /* Open state also goes on <body> so the CSS can collapse a grid that lives anywhere on the
+       page, with no structural relationship to this block. */
+    document.body.classList.toggle("lm-others-open",open);
     var hint=document.getElementById("othersHint"); if(hint) hint.style.display=open?"none":"";
-    if(open) head.scrollIntoView({behavior:"smooth",block:"start"});
+    if(open && head.scrollIntoView) head.scrollIntoView({behavior:"smooth",block:"start"});
   }
 
   /* ---- confirm modal ---- */
@@ -457,7 +467,14 @@
   });
   document.addEventListener("submit",function(e){ if(e.target.id==="regForm") confirmSelection(e); });
   document.addEventListener("change",function(e){ if(e.target.id==="countryFilter"||e.target.id==="langFilter") applyFilters(); });
-  document.addEventListener("keydown",function(e){ if(e.key==="Escape") closeConfirm(); });
+  document.addEventListener("keydown",function(e){
+    if(e.key==="Escape"){ closeConfirm(); return; }
+    /* #othersToggle carries role="button", so it has to answer to Enter and Space as well as a
+       click — a focusable control that only works with a mouse is worse than a plain heading. */
+    if((e.key==="Enter"||e.key===" "||e.key==="Spacebar") && e.target.closest && e.target.closest("#othersToggle")){
+      e.preventDefault(); toggleOthers();
+    }
+  });
 
   /* ---- init: run on ready + on load + retries + observe for late/re-rendered cards ---- */
   if(document.readyState!=="loading") run(); else document.addEventListener("DOMContentLoaded",run);
