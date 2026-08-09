@@ -20,6 +20,19 @@
  *   <script src> from GitHub Pages passes. All interactivity is wired via event
  *   delegation, so the OP markup carries NO inline on* handlers.
  *
+ * 2026-08-09 UPDATE:
+ *   - Card blurb: the field is Course Card Description (oCourses f3142). There is no
+ *     "Course Short Description" field, so the old .mf-descshort-only lookup merged
+ *     empty. The back now takes whichever of .mf-cardDesc / .mf-descshort / .mf-desc
+ *     carries a value short enough to BE a blurb, so it works however the block is
+ *     wired — including the live page, where .mf-desc itself was repointed at f3142.
+ *   - Session Dates: event 272 was rewritten to "Sep 10, 17, 24, Oct 1, …" — the
+ *     compact form, which carries no year — so every date came back y=0, datesValid()
+ *     was false, and the confirm modal's range line ("Jul 20 – Oct 5") rendered blank.
+ *     Yearless lists now get an inferred year for DISPLAY only and are flagged
+ *     guessed:true. The .ics still requires a year someone actually typed, so a wrong
+ *     guess can never put a real appointment on the wrong day.
+ *
  * OP MARKUP CONTRACT (ids/classes this script drives):
  *   cards: .sem-card > .mf-* (hidden feed), .flip, .flip-cap .fc-eyebrow/.fc-title,
  *          .flip-back p, .sem-photo, .when-day, .when-dates, .sem-lang, .sem-badges,
@@ -36,14 +49,69 @@
   window.__lmSeminarsInit = true;
 
   var MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  var DAY = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  var MONTH_IDX = {jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+  /* Longest line in Kate's reference is 52 chars ("Jul 20, 27, Aug 3, 10, 17, 24, 31, Sep 14, 28, Oct 5"),
+     which sits on two lines in the card. Past this we collapse to a range so the list can never
+     run off the card the way "THURSDAY, 10 SEP 2026 THURSDAY, 17 SEP 2026 …" did. */
+  var MAX_DATE_CHARS = 64;
+  /* Anything longer than this in the blurb feed is the full rich-text Course Description,
+     not a Course Card Description — treat it as the long fallback. */
+  var CARD_DESC_MAX = 420;
 
-  /* ---- dates ---- */
+  /* ---- dates ----
+   * Session Dates is SUPPOSED to be one YYYY-MM-DD per line, but events in the wild also carry
+   * "THURSDAY, 10 SEP 2026" per line and "March 2, 9, April 6, 13, 20" on one line. The old split-on-
+   * comma parser turned both into raw text, which is what Kate saw. This scanner reads all three and
+   * always renders the reference's compact "Jul 20, 27, Aug 3, …" line.
+   * A date whose year we never saw gets y=0 -> datesValid() is false -> the .ics button stays hidden
+   * rather than emitting a calendar file with a guessed year. */
+  function monthNum(word){ return MONTH_IDX[(word||"").slice(0,3).toLowerCase()] || 0; }
+  var DATE_RE = new RegExp(
+    "(\\d{4})-(\\d{1,2})-(\\d{1,2})(?:\\s+(\\d{1,2}:\\d{2}\\s*(?:[AaPp][Mm])?))?" +  //  1-4  2026-09-10 [19:00]
+    "|(\\d{1,2})(?:st|nd|rd|th)?\\s+([A-Za-z]{3,9})\\.?(?:\\s*,?\\s*(\\d{4})(?!\\d))?" +   //  5-7  10 Sep [2026]
+    "|([A-Za-z]{3,9})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:\\s*,?\\s*(\\d{4})(?!\\d))?" +   //  8-10 Sep 10[, 2026]
+    "|(\\d{1,2})(?:st|nd|rd|th)?",                                                   // 11    bare day, inherits month
+    "g");
   function parseDates(raw){
-    return (raw||"").split(/[\n,]+/).map(function(s){return s.trim();}).filter(Boolean).map(function(tok){
-      var parts=tok.split(/\s+/), dp=parts[0], tp=parts[1];
-      var p=dp.split("-").map(Number);
-      return {y:p[0],m:p[1],d:p[2],time:tp||null};
-    });
+    var s = String(raw==null?"":raw)
+      .replace(/<[^>]*>/g," ")                                                        // rich-text feeds arrive wrapped in <p>
+      .replace(/&nbsp;/gi," ")
+      .replace(/\b(mon|tues?|wed(?:nes)?|thur?s?|fri|sat(?:ur)?|sun)(?:day)?\b\.?/gi," ")  // weekday names are noise
+      .replace(/\s+/g," ");
+    var out=[], m, curM=0, curY=0;
+    DATE_RE.lastIndex=0;
+    while((m=DATE_RE.exec(s))){
+      if(m[0]==="") { DATE_RE.lastIndex++; continue; }
+      var d=0, mo=0, y=0, tm=null;
+      var after = s.charAt(m.index + m[0].length);
+      if(m[1]){ y=+m[1]; mo=+m[2]; d=+m[3]; tm=m[4]||null; }
+      else if(m[5] && m[6]){ if(/\d/.test(s.charAt(m.index-1))) continue; mo=monthNum(m[6]); d=+m[5]; y=m[7]?+m[7]:0; if(!m[7] && /\d/.test(after)) continue; }
+      else if(m[8] && m[9]){ if(!m[10] && /\d/.test(after)) continue; mo=monthNum(m[8]); d=+m[9]; y=m[10]?+m[10]:0; }
+      else if(m[11]){ if(/\d/.test(s.charAt(m.index-1)) || /\d/.test(after)) continue; d=+m[11]; mo=curM; }
+      if(!mo || mo>12 || !d || d>31) continue;
+      if(y) curY=y;
+      else if(curY){ y = (curM && mo<curM) ? curY+1 : curY; curY=y; }                 // list rolls into the next year
+      curM=mo;
+      out.push({y:y,m:mo,d:d,time:tm});
+    }
+    for(var i=out.length-2;i>=0;i--){                                                 // back-fill years typed only once, at the end
+      if(!out[i].y && out[i+1].y) out[i].y = out[i].m > out[i+1].m ? out[i+1].y-1 : out[i+1].y;
+    }
+    /* "Aug 4th - Aug 6th" is a span, not a session list — its two endpoints are not two
+       sessions, so leave it yearless and let the caller fall back to the raw text. */
+    return /\s[-–—]\s/.test(s) ? out : inferYears(out);
+  }
+  /* A list where NOBODY typed a year ("Sep 10, 17, 24, Oct 1, 8") still has to render a
+     range in the confirm modal, so infer one and mark it guessed. Callers that write a
+     real calendar entry use datesTyped() instead and skip these. */
+  function inferYears(out){
+    if(!out.length) return out;
+    for(var i=0;i<out.length;i++){ if(out[i].y) return out; }                         // someone typed a year — trust the fill above
+    var now=new Date(), y=now.getFullYear(), lastM=0;
+    if(out[0].m < now.getMonth()+1-6) y++;                                            // starts well behind today -> next year's run
+    out.forEach(function(o){ if(lastM && o.m<lastM) y++; o.y=y; o.guessed=true; lastM=o.m; });
+    return out;
   }
   function compactDates(dates){
     var out=[],lastM=null;
@@ -57,10 +125,24 @@
     return b.y>a.y ? base+", "+b.y : base;
   }
   function datesValid(dates){ return dates.length>0 && dates.every(function(o){ return o.y>1900 && o.m>=1 && o.m<=12 && o.d>=1 && o.d<=31; }); }
-  function rawDateLine(raw){ return (raw||"").split(/[\n,]+/).map(function(s){return s.trim();}).filter(Boolean).join(", "); }
+  /* good enough to PRINT vs good enough to put in someone's calendar */
+  function datesTyped(dates){ return datesValid(dates) && dates.every(function(o){ return !o.guessed; }); }
+  function rawDateLine(raw){ return String(raw==null?"":raw).replace(/<[^>]*>/g," ").split(/[\n,]+/).map(function(s){return s.trim();}).filter(Boolean).join(", "); }
   function parseTime(str){ var m=(str||"").trim().match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i); if(!m) return null; var h=parseInt(m[1],10), mi=m[2]?parseInt(m[2],10):0, ap=(m[3]||"").toLowerCase(); if(ap==="pm"&&h<12)h+=12; if(ap==="am"&&h===12)h=0; return {h:h,m:mi}; }
-  /* ---- date display: compact "Jul 20, 27, Aug 3" when YYYY-MM-DD, else show raw text as typed ---- */
-  function dateLine(raw){ var p=parseDates(raw); return datesValid(p)?compactDates(p):rawDateLine(raw); }
+  /* ---- date display: reference format "Jul 20, 27, Aug 3, …"; collapse to a range once it overflows ---- */
+  function dateLine(raw){
+    var p=parseDates(raw);
+    if(!datesValid(p)) return rawDateLine(raw);      // partial/unparseable -> show it exactly as typed
+    var full=compactDates(p);
+    if(full.length<=MAX_DATE_CHARS) return full;
+    return rangeLabel(p)+" · "+p.length+" sessions";
+  }
+  /* fallback for a blank Event Meeting Pattern, so the card never shows an empty bold line */
+  function dayLine(dates,start){
+    if(!dates.length || !dates[0].y) return "";
+    var w=DAY[new Date(dates[0].y,dates[0].m-1,dates[0].d).getDay()];
+    return w+"s"+(start?", "+String(start).trim():"");
+  }
 
   /* ---- IANA + DST-correct wall-time -> UTC (no library) ---- */
   function ianaOf(t){ var m=(t||"").match(/\(([^)]+\/[^)]+)\)/); return m?m[1]:(t||"UTC"); }
@@ -90,7 +172,7 @@
     return L.join("\r\n");
   }
   function downloadICS(data){
-    if(!datesValid(data.dates)) return;
+    if(!datesTyped(data.dates)) return;                     // never write a calendar file off a guessed year
     var blob=new Blob([buildICS(data)],{type:"text/calendar;charset=utf-8"});
     var a=document.createElement("a");
     a.href=URL.createObjectURL(blob);
@@ -102,6 +184,26 @@
   var TZ_COUNTRY={"America/New_York":"United States","America/Chicago":"United States","America/Denver":"United States","America/Los_Angeles":"United States","America/Phoenix":"United States","America/Anchorage":"United States","Pacific/Honolulu":"United States","America/Mexico_City":"Mexico","America/Bogota":"Colombia","Europe/London":"United Kingdom","Europe/Paris":"Europe","Europe/Istanbul":"Turkey","Asia/Dubai":"United Arab Emirates","Asia/Kolkata":"India","Asia/Bangkok":"Thailand","Asia/Ho_Chi_Minh":"Vietnam","Asia/Singapore":"Singapore","Asia/Tokyo":"Japan","Australia/Sydney":"Australia","Pacific/Auckland":"New Zealand"};
   function countryFromTZ(t){ return TZ_COUNTRY[ianaOf(t)]||"Other"; }
   function splitTitle(name){ var i=(name||"").indexOf(":"); return i===-1?{eyebrow:name,main:""}:{eyebrow:name.slice(0,i).trim(),main:name.slice(i+1).trim()}; }
+  /* trimmed value, or "" if the merge came back unresolved ("[Block//…]") — never paint a token */
+  function val(s){ s=String(s==null?"":s).replace(/\s+/g," ").trim(); return /[\[\]]/.test(s)?"":s; }
+  /* OP sometimes delivers the field HTML-escaped; put <strong>/<em> back so the blurb can bold a phrase */
+  function unwrapTags(s){
+    s=String(s==null?"":s);
+    if(!/<(strong|b|em|i)\b/i.test(s)) s=s.replace(/&lt;(\/?(?:strong|b|em|i))&gt;/gi,"<$1>");
+    return s.replace(/&nbsp;/gi," ").trim();
+  }
+  /* The blurb feed, whatever the block calls it. Course Card Description (f3142) may be
+     wired as .mf-cardDesc, as .mf-descshort, or straight into .mf-desc — the live page
+     does the last of those. First span holding something short enough to be a blurb wins;
+     a full rich-text Course Description falls through to the faded long treatment. */
+  function backSource(card){
+    var names=["cardDesc","descshort","desc"];
+    for(var i=0;i<names.length;i++){
+      var el=card.querySelector(".mf-"+names[i]);
+      if(el && val(el.textContent) && val(el.textContent).length<=CARD_DESC_MAX) return el;
+    }
+    return null;
+  }
   function cardData(card){
     var d=card.dataset;
     return {el:card,eventId:d.eventId,courseId:d.courseId,course:d.course,pattern:d.pattern,
@@ -112,30 +214,58 @@
   function fillCard(card){
     if(card.getAttribute("data-ready")==="1") return;
     var mf=function(k){var el=card.querySelector(".mf-"+k);return el?(el.textContent||"").trim():"";};
-    var keys=["eventId","courseId","course","image","desc","pattern","dates","start","end","tz","lang","format","zoom"];
+    var keys=["eventId","courseId","course","image","desc","descshort","cardDesc","pattern","dates","start","end","tz","lang","format","zoom"];
     var anyData=false;
     keys.forEach(function(k){ var v=mf(k); card.dataset[k]=v; if(v) anyData=true; });
     if(!anyData) return; // merge not resolved yet — leave unready so a retry re-attempts
     var img=card.querySelector(".sem-photo"); if(img&&card.dataset.image){ img.src=card.dataset.image; img.alt=card.dataset.course; }
-    /* rebuild the flip-back as ONE clean paragraph: pull the raw description, turn block/line breaks
-       into spaces (so words never run together), strip the rest, and drop it into a single <p>.
-       This lets the CSS vertically-center + line-clamp it exactly like the reference. */
+    /* rebuild the flip-back as ONE clean paragraph. Prefer Course Card Description (the field the
+       AI automation writes: one sentence, one <strong> phrase) and keep its bold; otherwise fall back
+       to the long Course Description flattened to plain text, as before. */
     var back=card.querySelector(".flip-back");
     if(back){
-      var mfd=card.querySelector(".mf-desc");
-      var src=mfd?(mfd.innerHTML||""):(card.dataset.desc||"");
-      var tmp=document.createElement("div");
-      tmp.innerHTML=src.replace(/<\/(p|li|div|ul|ol|h[1-6])>/gi," ").replace(/<br\s*\/?>/gi," ");
-      var clean=(tmp.textContent||"").replace(/\s+/g," ").trim();
-      if(clean){ back.innerHTML=""; var bp=document.createElement("p"); bp.textContent=clean; back.appendChild(bp); }
+      var mfs=backSource(card);
+      var shortHtml=unwrapTags(mfs?(mfs.innerHTML||""):"");
+      var bp;
+      if(shortHtml){
+        back.innerHTML=""; bp=document.createElement("p");
+        bp.innerHTML=shortHtml.replace(/<(?!\/?(strong|b|em|i)\b)[^>]*>/gi,"").replace(/\s+/g," ").trim();
+        back.appendChild(bp);
+        card.classList.add("has-short-desc");   // lets the CSS drop the fade-out meant for the long description
+      } else {
+        var mfd=card.querySelector(".mf-desc");
+        var src=mfd?(mfd.innerHTML||""):(card.dataset.desc||"");
+        var tmp=document.createElement("div");
+        tmp.innerHTML=src.replace(/<\/(p|li|div|ul|ol|h[1-6])>/gi," ").replace(/<br\s*\/?>/gi," ");
+        var plain=(tmp.textContent||"").replace(/\s+/g," ").trim();
+        if(plain){ back.innerHTML=""; bp=document.createElement("p"); bp.textContent=plain; back.appendChild(bp); }
+      }
     }
-    var wday=card.querySelector(".when-day"); if(wday&&!wday.textContent) wday.textContent=card.dataset.pattern;
-    var lg=card.querySelector(".sem-lang"); if(lg&&!lg.textContent) lg.textContent="Delivered in: "+card.dataset.lang+".";
+    /* Dates + language are rewritten, not filled-only: on the live page the block feeds the raw merge
+       straight into these elements, so "fill only when empty" left Kate looking at
+       "THURSDAY, 10 SEP 2026 …" and "Delivered in: .". */
+    var dsrc=val(card.dataset.dates) || val((card.querySelector(".when-dates")||{}).textContent);
+    var parsed=parseDates(dsrc);
+    var wd=card.querySelector(".when-dates"); if(wd) wd.textContent=dsrc?dateLine(dsrc):"";
+    var wday=card.querySelector(".when-day");
+    if(wday){
+      var pat=val(card.dataset.pattern) || val(wday.textContent) || dayLine(parsed,card.dataset.start);
+      wday.textContent=pat;
+      wday.style.display=pat?"":"none";
+    }
+    var lg=card.querySelector(".sem-lang");
+    if(lg){
+      var lang=val(card.dataset.lang);
+      lg.textContent=lang?("Delivered in: "+lang+"."):"";
+      lg.style.display=lang?"":"none";                    // no more orphan "Delivered in: ."
+    }
     var t=splitTitle(card.dataset.course);
     var eb=card.querySelector(".fc-eyebrow"), ti=card.querySelector(".fc-title");
     if(eb&&!eb.textContent) eb.textContent=t.eyebrow;
     if(ti&&!ti.textContent) ti.textContent=t.main;
-    var wd=card.querySelector(".when-dates"); if(wd&&!wd.textContent) wd.textContent=dateLine(card.dataset.dates);
+    /* size bucket for the coral headline — long names like BREAKTHROUGHS: LIVING OUTSIDE THE BOX
+       step down instead of blowing out of the photo (CSS drives the actual sizes) */
+    if(eb){ var n=(eb.textContent||"").trim().length; eb.setAttribute("data-len", n<=11?"s":n<=17?"m":n<=25?"l":"xl"); }
     var b=card.querySelector(".sem-badges");
     if(b&&!b.innerHTML){ var online=/online/i.test(card.dataset.format||""); b.innerHTML=online?'<span class="badge badge-online">Online</span>':'<span class="badge badge-inperson">In Person</span>'; }
     if(!card.dataset.country) card.dataset.country=countryFromTZ(card.dataset.tz);
@@ -223,7 +353,7 @@
     var st=document.getElementById("successText"); if(st) st.textContent=d.course+" – "+(d.pattern||"")+".";
     var rf=document.getElementById("regForm"); if(rf) rf.style.display="none";
     var cs=document.getElementById("confirmSuccess"); if(cs) cs.classList.add("show");
-    var addBtn=document.getElementById("addCalBtn"); if(addBtn) addBtn.style.display=datesValid(d.dates)?"":"none";
+    var addBtn=document.getElementById("addCalBtn"); if(addBtn) addBtn.style.display=datesTyped(d.dates)?"":"none";
   }
   function confirmSelection(e){
     if(e) e.preventDefault();
