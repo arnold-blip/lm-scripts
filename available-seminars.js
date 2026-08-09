@@ -388,8 +388,10 @@
      them and tag it .lm-others so the collapse CSS can reach it. Tagging at runtime rather than in
      the stylesheet keeps this fail-open — if the script never runs, the grid stays visible instead
      of being permanently hidden. */
+  /* .secondary-events is the Custom block class set on the grid's Ontraport block. That is the
+     reliable marker — prefer it over anything we infer. */
   function othersGridEl(){
-    var explicit=document.querySelector("#othersGrid, .lm-others");
+    var explicit=document.querySelector("#othersGrid, .secondary-events, .lm-others");
     if(explicit) return explicit;
     var head=document.getElementById("othersToggle");
     if(!head) return null;
