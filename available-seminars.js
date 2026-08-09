@@ -350,6 +350,7 @@
     var cards=document.querySelectorAll(".sem-card");
     if(!cards.length) return;
     cards.forEach(fillCard);
+    othersGridEl();                                    // tag the grid block so the collapse CSS can reach it
     if(!filtersReady && othersCards().length){ populateFilters(); applyFilters(); filtersReady=true; }
   }
 
@@ -382,7 +383,31 @@
   /* The "other seminars" grid is usually its own Ontraport block, so a custom HTML block cannot
      wrap it and #othersBody cannot contain it. Resolve it by id OR by the lm-others class that
      gets put on the OP block itself. */
-  function othersGridEl(){ return document.querySelector("#othersGrid, .lm-others"); }
+  /* Prefer an explicit marker, but fall back to finding the grid ourselves: the "other" cards are
+     the ones that come AFTER #othersToggle in document order. Walk up to the Ontraport row holding
+     them and tag it .lm-others so the collapse CSS can reach it. Tagging at runtime rather than in
+     the stylesheet keeps this fail-open — if the script never runs, the grid stays visible instead
+     of being permanently hidden. */
+  function othersGridEl(){
+    var explicit=document.querySelector("#othersGrid, .lm-others");
+    if(explicit) return explicit;
+    var head=document.getElementById("othersToggle");
+    if(!head) return null;
+    var cards=document.querySelectorAll(".sem-card");
+    for(var i=0;i<cards.length;i++){
+      var c=cards[i];
+      if(!(head.compareDocumentPosition(c) & 4)) continue;        // 4 = DOCUMENT_POSITION_FOLLOWING
+      var n=c.parentNode, row=null;
+      while(n && n!==document.body){                              // nearest OP row that does not also hold the heading
+        if(n.classList && n.classList.contains("opt-row") && !n.contains(head)){ row=n; break; }
+        n=n.parentNode;
+      }
+      if(!row) row=c.parentNode;
+      if(row.classList && !row.classList.contains("lm-others")) row.classList.add("lm-others");
+      return row;
+    }
+    return null;
+  }
   function othersCards(){ var g=othersGridEl(); return g?g.querySelectorAll(".sem-card"):[]; }
   function toggleOthers(){
     var head=document.getElementById("othersToggle");
