@@ -180,6 +180,21 @@
   /* ---- IANA -> country (best-effort) ---- */
   var TZ_COUNTRY={"America/New_York":"United States","America/Chicago":"United States","America/Denver":"United States","America/Los_Angeles":"United States","America/Phoenix":"United States","America/Anchorage":"United States","Pacific/Honolulu":"United States","America/Mexico_City":"Mexico","America/Bogota":"Colombia","Europe/London":"United Kingdom","Europe/Paris":"Europe","Europe/Istanbul":"Turkey","Asia/Dubai":"United Arab Emirates","Asia/Kolkata":"India","Asia/Bangkok":"Thailand","Asia/Ho_Chi_Minh":"Vietnam","Asia/Singapore":"Singapore","Asia/Tokyo":"Japan","Australia/Sydney":"Australia","Pacific/Auckland":"New Zealand"};
   function countryFromTZ(t){ return TZ_COUNTRY[ianaOf(t)]||"Other"; }
+  var TZ_LABEL={"America/New_York":"Eastern Time","America/Chicago":"Central Time","America/Denver":"Mountain Time","America/Phoenix":"Arizona Time","America/Los_Angeles":"Pacific Time","America/Anchorage":"Alaska Time","Pacific/Honolulu":"Hawaii Time","America/Mexico_City":"Mexico City Time","America/Bogota":"Colombia Time","America/Sao_Paulo":"Brazil Time","Europe/London":"UK Time","Europe/Paris":"Central European Time","Europe/Athens":"Eastern European Time","Europe/Istanbul":"Turkey Time","Asia/Dubai":"Gulf Time","Asia/Kolkata":"India Standard Time","Asia/Bangkok":"Indochina Time","Asia/Singapore":"Singapore Time","Asia/Tokyo":"Japan Time","Australia/Sydney":"Sydney Time","Pacific/Auckland":"New Zealand Time"};
+  /* Six seminar events store the meeting pattern with no time ("Wednesdays") and keep the time in
+     Session Start Time, so the modal header read "Wednesdays · Online" where the reference reads
+     "Tuesdays, 7:00 PM Eastern Time · Online". Compose the missing piece from the fields that do
+     carry it. The zone name comes from Calendar Time Zone (IANA) because that is the authoritative
+     one — it drives the .ics — while the free-text Event Time Zone field is inconsistent across
+     records ("Pacific" vs "Pacific Time" vs "Eastern Time Zone"). */
+  function withTime(pattern,start,tz){
+    pattern=val(pattern); start=val(start);
+    if(!pattern||!start) return pattern;
+    if(/\d\s*:\s*\d|\d\s*[ap]\.?m\.?/i.test(pattern)) return pattern;              // already carries a time
+    var hasZone=/\b(ET|PT|CT|MT|E[SD]T|P[SD]T|C[SD]T|M[SD]T|GMT|UTC|Time)\b/i.test(start);
+    var label=hasZone?"":(TZ_LABEL[ianaOf(tz)]||"");
+    return pattern+", "+start+(label?" "+label:"");
+  }
   function splitTitle(name){ var i=(name||"").indexOf(":"); return i===-1?{eyebrow:name,main:""}:{eyebrow:name.slice(0,i).trim(),main:name.slice(i+1).trim()}; }
   /* trimmed value, or "" if the merge came back unresolved ("[Block//…]") — never paint a token */
   function val(s){ s=String(s==null?"":s).replace(/\s+/g," ").trim(); return /[\[\]]/.test(s)?"":s; }
@@ -208,7 +223,7 @@
   }
   function cardData(card){
     var d=card.dataset;
-    return {el:card,eventId:d.eventId,courseId:d.courseId,course:d.course,pattern:d.pattern,
+    return {el:card,eventId:d.eventId,courseId:d.courseId,course:d.course,pattern:withTime(d.pattern,d.start,d.tz),
       dates:parseDates(d.dates),datesRaw:d.dates,start:d.start,end:d.end,tz:d.tz,lang:d.lang,format:d.format,zoom:d.zoom};
   }
 
@@ -276,7 +291,7 @@
     var wd=card.querySelector(".when-dates"); if(wd && dsrc) set(wd,dateLine(dsrc));
     var wday=card.querySelector(".when-day");
     if(wday){
-      var pat=card.dataset.pattern || val(wday.textContent) || dayLine(parsed,card.dataset.start);
+      var pat=withTime(card.dataset.pattern || val(wday.textContent) || dayLine(parsed,card.dataset.start), card.dataset.start, card.dataset.tz);
       if(pat) set(wday,pat);
       if(wday.style.display!==(pat?"":"none")) wday.style.display=pat?"":"none";
     }
