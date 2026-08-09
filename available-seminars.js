@@ -271,17 +271,25 @@
     if(!card.dataset.country) card.dataset.country=countryFromTZ(card.dataset.tz);
     card.setAttribute("data-ready","1");
   }
-  var filtersReady=false, modalMoved=false;
-  /* OP wraps blocks in transformed containers, which traps a position:fixed overlay inside the block.
-     Move the modal up to <body> so it covers the whole viewport. */
+  var filtersReady=false;
+  /* OP wraps blocks in transformed containers, which traps a position:fixed overlay inside the
+     block — a later opt-row then paints straight over the modal's dark header. Move the modal up
+     to <body> so it covers the whole viewport.
+
+     No run-once latch: OP re-renders the block after we move it (responsive copies, DCMS hydration),
+     which puts a FRESH #confirmOverlay back inside the block. getElementById then returns that
+     trapped copy — document order, and the body copy is last — so every subsequent open was the
+     buried one. This re-checks on every pass instead. It is idempotent: once exactly one overlay
+     exists and it is a child of <body>, nothing is touched, so the MutationObserver never re-fires. */
   function relocateModal(){
-    if(modalMoved) return;
     var ovs=document.querySelectorAll("#confirmOverlay");
     if(!ovs.length) return;
-    var keep=ovs[0];                                                   // OP renders responsive copies of the block
-    for(var i=1;i<ovs.length;i++){ if(ovs[i].parentNode) ovs[i].parentNode.removeChild(ovs[i]); }  // drop the extras so getElementById is unambiguous
+    var keep=null;
+    for(var i=0;i<ovs.length;i++){ if(ovs[i].parentNode===document.body){ keep=ovs[i]; break; } }  // prefer the one already moved — it may be open
+    if(!keep) keep=ovs[0];
+    for(var j=0;j<ovs.length;j++){ if(ovs[j]!==keep && ovs[j].parentNode) ovs[j].parentNode.removeChild(ovs[j]); }
     if(keep.parentNode!==document.body) document.body.appendChild(keep);
-    modalMoved=true;
+    if(keep.style.zIndex!=="99999") keep.style.zIndex="99999";         // out-rank every opt-row
   }
   function run(){
     relocateModal();
