@@ -211,8 +211,13 @@
   }
 
   /* ---- fill one card from its merge feed; skip if already done or not yet resolved ---- */
+  /* No run-once latch. OP resolves this block's merges AFTER the script's first pass, so a card
+     stamped data-ready on pass 1 was frozen half-built: the caption and description arrived later
+     and never got split, centred or classed. Every pass now re-reads the card and re-applies only
+     what actually changed, so the card heals itself the moment OP fills it in. Every write below is
+     guarded by a difference check — without that, each write would retrigger the MutationObserver
+     and the passes would never settle. data-ready is now a status flag, not a gate. */
   function fillCard(card){
-    if(card.getAttribute("data-ready")==="1") return;
     /* val() here, not raw text: an unresolved feed hands back the literal "[Block//…]" token, and
        anything downstream that consumed it did real damage — img.src="[Block//Course//Course Image
        ##link]" fired a 404, and splitTitle() found no colon in the token so the whole thing landed
@@ -226,8 +231,9 @@
        carries the course name and description inline instead of through .mf-* spans, and with no
        feed at all we would otherwise blank a card that was rendering fine. */
     if(!card.dataset.course) card.dataset.course=val(ebEl?ebEl.textContent:"");
-    if(!anyData && !card.dataset.course) return;   // nothing to work with — stay unready so a retry re-attempts
-    var img=card.querySelector(".sem-photo"); if(img&&card.dataset.image){ img.src=card.dataset.image; img.alt=card.dataset.course; }
+    if(!anyData && !card.dataset.course) return;   // nothing to work with yet — a later pass will retry
+    var img=card.querySelector(".sem-photo");
+    if(img && card.dataset.image && img.getAttribute("src")!==card.dataset.image){ img.src=card.dataset.image; img.alt=card.dataset.course; }
     /* rebuild the flip-back as ONE clean paragraph. Prefer Course Card Description (the field the
        AI automation writes: one sentence, one <strong> phrase) and keep its bold; otherwise fall back
        to the long Course Description flattened to plain text, as before. */
@@ -242,14 +248,19 @@
       probe.innerHTML=srcHtml.replace(/<\/(p|li|div|ul|ol|h[1-6])>/gi," ").replace(/<br\s*\/?>/gi," ");
       var plain=(probe.textContent||"").replace(/\s+/g," ").trim();
       var bp;
-      if(plain && plain.length<=CARD_DESC_MAX){
-        back.innerHTML=""; bp=document.createElement("p");
-        bp.innerHTML=srcHtml.replace(/<(?!\/?(strong|b|em|i)\b)[^>]*>/gi,"").replace(/\s+/g," ").trim();
-        back.appendChild(bp);
-        card.classList.add("has-short-desc");   // lets the CSS centre it and drop the long-description fade
-      } else if(plain){
-        back.innerHTML=""; bp=document.createElement("p"); bp.textContent=plain; back.appendChild(bp);
-        card.classList.remove("has-short-desc");
+      /* Re-render only when the source text actually changed — this is what lets a late OP merge
+         land, while our own output on the next pass reads back identical and is left alone. */
+      if(plain && plain!==card.getAttribute("data-back-src")){
+        if(plain.length<=CARD_DESC_MAX){
+          back.innerHTML=""; bp=document.createElement("p");
+          bp.innerHTML=srcHtml.replace(/<(?!\/?(strong|b|em|i)\b)[^>]*>/gi,"").replace(/\s+/g," ").trim();
+          back.appendChild(bp);
+          card.classList.add("has-short-desc");   // lets the CSS centre it and drop the long-description fade
+        } else {
+          back.innerHTML=""; bp=document.createElement("p"); bp.textContent=plain; back.appendChild(bp);
+          card.classList.remove("has-short-desc");
+        }
+        card.setAttribute("data-back-src",plain);
       }
     }
     /* Dates + language are rewritten, not filled-only: on the live page the block feeds the raw merge
@@ -257,34 +268,38 @@
        "THURSDAY, 10 SEP 2026 …" and "Delivered in: .". */
     /* Only ever WRITE a line we have a value for. Blanking on missing data is what emptied the
        meeting pattern, the date list and the language line when the feed stopped resolving. */
+    var set=function(el,txt){ if(el && (el.textContent||"")!==txt) el.textContent=txt; };   // write only on change
     var dsrc=card.dataset.dates || val((card.querySelector(".when-dates")||{}).textContent);
     var parsed=parseDates(dsrc);
-    var wd=card.querySelector(".when-dates"); if(wd && dsrc) wd.textContent=dateLine(dsrc);
+    var wd=card.querySelector(".when-dates"); if(wd && dsrc) set(wd,dateLine(dsrc));
     var wday=card.querySelector(".when-day");
     if(wday){
       var pat=card.dataset.pattern || val(wday.textContent) || dayLine(parsed,card.dataset.start);
-      if(pat) wday.textContent=pat;
-      wday.style.display=pat?"":"none";
+      if(pat) set(wday,pat);
+      if(wday.style.display!==(pat?"":"none")) wday.style.display=pat?"":"none";
     }
     var lg=card.querySelector(".sem-lang");
     if(lg){
       var lang=card.dataset.lang;
-      if(lang) lg.textContent="Delivered in: "+lang+".";
-      lg.style.display=lang?"":"none";                    // no orphan "Delivered in: ."
+      if(lang) set(lg,"Delivered in: "+lang+".");
+      if(lg.style.display!==(lang?"":"none")) lg.style.display=lang?"":"none";   // no orphan "Delivered in: ."
     }
     /* Split the caption even when the name was rendered inline by OP — that is why the whole
        "Breakthroughs: Living Outside the Box" sat in the coral line with no white subtext. */
     var t=splitTitle(card.dataset.course);
     var eb=ebEl, ti=card.querySelector(".fc-title");
-    if(eb && t.eyebrow) eb.textContent=t.eyebrow;
-    if(ti && t.main) ti.textContent=t.main;
+    if(eb && t.eyebrow) set(eb,t.eyebrow);
+    if(ti && t.main) set(ti,t.main);
     /* size bucket for the coral headline — long names like BREAKTHROUGHS: LIVING OUTSIDE THE BOX
        step down instead of blowing out of the photo (CSS drives the actual sizes) */
-    if(eb){ var n=(eb.textContent||"").trim().length; eb.setAttribute("data-len", n<=11?"s":n<=17?"m":n<=25?"l":"xl"); }
+    if(eb){
+      var n=(eb.textContent||"").trim().length, len=n<=11?"s":n<=17?"m":n<=25?"l":"xl";
+      if(eb.getAttribute("data-len")!==len) eb.setAttribute("data-len",len);
+    }
     var b=card.querySelector(".sem-badges");
     if(b&&!b.innerHTML){ var online=/online/i.test(card.dataset.format||""); b.innerHTML=online?'<span class="badge badge-online">Online</span>':'<span class="badge badge-inperson">In Person</span>'; }
     if(!card.dataset.country) card.dataset.country=countryFromTZ(card.dataset.tz);
-    card.setAttribute("data-ready","1");
+    if(card.getAttribute("data-ready")!=="1") card.setAttribute("data-ready","1");   // status flag only — guarded so it can't retrigger the observer
   }
   var filtersReady=false;
   /* OP wraps blocks in transformed containers, which traps a position:fixed overlay inside the
