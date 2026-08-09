@@ -287,7 +287,15 @@
     var keep=null;
     for(var i=0;i<ovs.length;i++){ if(ovs[i].parentNode===document.body){ keep=ovs[i]; break; } }  // prefer the one already moved — it may be open
     if(!keep) keep=ovs[0];
-    for(var j=0;j<ovs.length;j++){ if(ovs[j]!==keep && ovs[j].parentNode) ovs[j].parentNode.removeChild(ovs[j]); }
+    /* Neutralise the duplicates by dropping their id rather than deleting the node. Removing a node
+       from inside an OP block can make OP re-render and re-insert it, and with this function now
+       running on every pass that becomes a remove/re-add loop. Stripping the id is a one-time edit:
+       the element stops matching #confirmOverlay, so the next pass never sees it again. */
+    for(var j=0;j<ovs.length;j++){
+      if(ovs[j]===keep) continue;
+      ovs[j].removeAttribute("id");
+      ovs[j].style.display="none";
+    }
     if(keep.parentNode!==document.body) document.body.appendChild(keep);
     if(keep.style.zIndex!=="99999") keep.style.zIndex="99999";         // out-rank every opt-row
   }
