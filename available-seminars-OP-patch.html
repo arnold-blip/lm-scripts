@@ -1,0 +1,126 @@
+<!-- ===========================================================================
+     SEM : Selection : Available Seminars  —  PATCH for Kate's 2026-08 review
+     Paste into the SAME Custom HTML block that already holds the card CSS (Block 2).
+     Nothing here replaces the block; each step is additive.
+
+     Covers: (1) short-description merge feed, (2) coral headline "thinner + to
+     scale", (3) white subtext under the headline, (4) flip-back tuned for the new
+     one-sentence blurb. The long-date fix is in available-seminars.js — re-upload
+     it and bump ?v= (GitHub Pages caches ~10 min).
+     =========================================================================== -->
+
+
+<!-- ---------------------------------------------------------------------------
+     STEP 1 — add ONE line to the hidden merge feed inside the card markup,
+     next to the existing .mf-desc span. Build the token with the block's field
+     PICKER (do not hand-type it) so the Event->Course relationship resolves.
+     Course Short Description is the new field the AI automation writes.
+     If the field is empty the card silently falls back to the long description,
+     so this is safe to add before the automation runs.
+--------------------------------------------------------------------------- -->
+<span class="mf-descshort" style="display:none">[Block//Course//Course Short Description]</span>
+
+
+<!-- ---------------------------------------------------------------------------
+     STEP 2 — append this <style> to the block. Rules are prefixed `body` on
+     purpose: a duplicate Block 2 has shipped on this page before and plain
+     .sem-card rules lost the specificity fight.
+--------------------------------------------------------------------------- -->
+<style>
+/* ---- coral headline: thinner, and stepped down so long names stay in the photo ----
+   Kate: "the words Excellence and Commitment ... thinner and more to scale in the space".
+   available-seminars.js stamps data-len (s/m/l/xl) from the headline's character count,
+   so BREAKTHROUGHS: LIVING OUTSIDE THE BOX drops a size instead of overflowing. */
+body .sem-card .fc-eyebrow{
+  font-weight:600;                 /* was 800 */
+  letter-spacing:.035em;
+  line-height:1.12;
+  margin:0 auto 8px;
+  max-width:94%;
+  overflow-wrap:break-word;
+  text-wrap:balance;
+}
+body .sem-card .fc-eyebrow[data-len="s"]{  font-size:22px; }
+body .sem-card .fc-eyebrow[data-len="m"]{  font-size:20px; }
+body .sem-card .fc-eyebrow[data-len="l"]{  font-size:17px; }
+body .sem-card .fc-eyebrow[data-len="xl"]{ font-size:15px; letter-spacing:.02em; }
+
+/* ---- the white subtext under the headline ----
+   On the live page this line was rendering coral, so the pair read as one orange
+   slab (see the Breakthroughs card). Pin it white and lighten it. */
+body .sem-card .fc-title{
+  color:#ffffff !important;
+  font-weight:500;                 /* was 700 */
+  font-size:16px;
+  line-height:1.35;
+  margin:0 auto;
+  max-width:96%;
+  text-wrap:balance;
+}
+body .card-grid.designated .sem-card .fc-title{ font-size:17px; }
+
+/* a touch more breathing room around the pair */
+body .sem-card .flip-cap{ padding:18px 20px; }
+
+/* ---- date line: keep the compact list to two lines, never let it push the card ---- */
+body .sem-card .sem-when .when-dates{
+  font-size:12.5px;
+  line-height:1.5;
+  overflow-wrap:break-word;
+}
+
+/* ---- flip-back once Course Short Description is populated ----
+   The gradient fade currently on the back exists only to cut off the long
+   rich-text description. A one-sentence blurb should sit centred, unfaded —
+   the JS adds .has-short-desc to any card that used the short field, so cards
+   still on the long description keep the fade. */
+body .sem-card.has-short-desc .flip-back::after{ content:none !important; }
+body .sem-card.has-short-desc .flip-back{
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  padding:20px 24px !important;
+}
+body .sem-card.has-short-desc .flip-back p{
+  font-size:14px !important;
+  line-height:1.6 !important;
+  text-align:center !important;
+  color:#ffffff !important;
+  -webkit-line-clamp:none !important;
+  max-height:none !important;
+}
+body .sem-card.has-short-desc .flip-back p strong{ font-weight:800 !important; }
+</style>
+
+
+<!-- ---------------------------------------------------------------------------
+     NOT a CSS fix — verified against the live Ontraport data 2026-08-09.
+
+     A. Session Dates (Events 10000, f2753): NOT ONE seminar event uses the
+        canonical one-YYYY-MM-DD-per-line format. Three different formats are in
+        play across the 11 seminar-tagged events (f2760 = 303/304):
+
+          "THURSDAY, 10 SEP 2026"     -> 272 (Breakthroughs, the DESIGNATED card in
+                                         Kate's screenshot), 260, 259, 258, 257, 256
+          "Saturday, 24 Oct 2026"     -> 255
+          "Feb 2, 9, March 6, 13, 20" -> 253, 252 (and 251, 250, both Hidden/305)
+
+        The updated available-seminars.js reads all three and renders the reference
+        line ("Sep 10, 17, 24, Oct 1, 8, 15, 29, Nov 12, 19, Dec 3"), so the cards
+        are correct without touching the data. Normalising to YYYY-MM-DD is still
+        worth doing: it is the only format that produces a year, and without a year
+        the Add-to-Calendar (.ics) button hides itself rather than guess. Events
+        253/252 have no year at all, so those two lose the .ics until fixed.
+
+     B. "Delivered in: ." is a BLOCK MERGE problem, not missing data. Event 272's
+        Language field (f2321) is populated (137 = English). The token in the card
+        block is not resolving, so it merges empty. Rebuild that span with the
+        field PICKER rather than hand-typing it. The JS now hides the line when the
+        value is empty, so the orphan full stop is gone either way.
+
+     C. Event Meeting Pattern (f2756) is the bold line above the dates. It is filled
+        on the seminar events, though several carry only "Thursdays" with no time
+        (257, 258, 259, 260) while 272 has the full "Thursdays, 6:00 PM PT". Worth
+        making consistent. If it is ever blank the JS derives
+        "Thursdays, <start time>" from the session dates.
+--------------------------------------------------------------------------- -->
