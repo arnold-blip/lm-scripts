@@ -22,7 +22,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.0.1';
 
   var DEFAULTS = {
     // --- element hooks (paste these ids/attrs into the OP page) ---
@@ -51,6 +51,18 @@
   };
 
   var cfg = null;
+
+  // Observer plumbing. apply() mutates the DOM, and the observer watches the DOM,
+  // so it MUST NOT be listening while apply() runs or it re-triggers itself
+  // forever — microtasks starve the disconnect timer and the page hangs before
+  // first paint. Fixed in 1.0.1; the debug overlay made it reproducible every time.
+  var observer = null;
+  var applying = false;
+  var stopped = false;
+  var applyCount = 0;
+  var MAX_APPLIES = 200;          // backstop: nothing legitimate needs more
+  var bootIso = new Date().toISOString();
+
   var state = {
     version: VERSION,
     ready: false,
@@ -194,7 +206,10 @@
     var cls = kind === 'discount' ? cfg.discountBlockClass : cfg.fullBlockClass;
     var byClass = document.querySelector('form.' + cls) || document.querySelector('.' + cls);
     if (byClass) {
-      return byClass.matches('form') ? byClass : (byClass.closest('form') || byClass);
+      if (byClass.matches('form')) return byClass;
+      // The class may sit on the form, on an ancestor wrapper, or on a container
+      // that holds the form — Ontraport's block markup varies. Try all three.
+      return byClass.closest('form') || byClass.querySelector('form') || byClass;
     }
     return null;
   }
@@ -255,7 +270,39 @@
 
   /* --------------------------------------------------------------- render */
 
+  function startObserving() {
+    if (stopped || !global.MutationObserver || !document.body) return;
+    if (!observer) observer = new MutationObserver(function () { apply(); });
+    observer.takeRecords();   // discard anything we just caused ourselves
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+
+  function stopObserving() {
+    if (observer) observer.disconnect();
+  }
+
   function apply() {
+    if (applying) return state;
+
+    if (applyCount >= MAX_APPLIES) {
+      stopped = true;
+      stopObserving();
+      return state;
+    }
+    applyCount++;
+
+    applying = true;
+    stopObserving();
+
+    try {
+      return applyInner();
+    } finally {
+      applying = false;
+      startObserving();
+    }
+  }
+
+  function applyInner() {
     var inWindow = decide();
 
     var discountPrice = document.getElementById(cfg.discountPriceId);
@@ -287,6 +334,8 @@
 
   /* ---------------------------------------------------------------- debug */
 
+  var lastDebugText = null;
+
   function renderDebug() {
     if (qs('lmdebug') !== '1') return;
     var box = document.getElementById('lm-price-window-debug');
@@ -298,16 +347,25 @@
         'padding:12px 14px;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.35);white-space:pre-wrap;';
       document.body.appendChild(box);
     }
-    box.textContent =
+    var text =
       'lm-price-window v' + VERSION + '\n' +
       'decision : ' + (state.inWindow ? 'DISCOUNT' : 'FULL PRICE') + '\n' +
       'reason   : ' + state.reason + '\n' +
       'source   : ' + state.source + '\n' +
       'raw      : ' + (state.raw === null ? '(none)' : JSON.stringify(state.raw)) + '\n' +
       'expiry   : ' + (state.expiry ? new Date(state.expiry).toISOString() : '(none)') + '\n' +
-      'now      : ' + new Date().toISOString() + '\n' +
+      'loaded   : ' + bootIso + '\n' +
       'blocks   : discount=' + state.blocksFound.discount + ' full=' + state.blocksFound.full + '\n' +
-      'forms    : discount=' + state.formsFound.discount + ' full=' + state.formsFound.full;
+      'forms    : discount=' + state.formsFound.discount + ' full=' + state.formsFound.full + '\n' +
+      'applies  : ' + applyCount;
+
+    // Writing textContent is a childList mutation. Only write when something
+    // actually changed, and never write a live clock — see the note on the
+    // observer below.
+    if (text !== lastDebugText) {
+      lastDebugText = text;
+      box.textContent = text;
+    }
   }
 
   /* ----------------------------------------------------------------- boot */
@@ -323,11 +381,11 @@
     // schedule and while the DOM is still settling.
     cfg.retries.forEach(function (t) { if (t > 0) setTimeout(apply, t); });
 
-    if (global.MutationObserver && document.body) {
-      var observer = new MutationObserver(function () { apply(); });
-      observer.observe(document.body, { childList: true, subtree: true });
-      setTimeout(function () { observer.disconnect(); }, cfg.observeMs);
-    }
+    startObserving();
+    setTimeout(function () {
+      stopped = true;
+      stopObserving();
+    }, cfg.observeMs);
 
     return state;
   }
