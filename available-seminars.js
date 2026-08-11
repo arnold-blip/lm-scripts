@@ -497,7 +497,11 @@
       window.alert("We couldn't identify your account. Please refresh the page and try again.");
       return false;
     }
-    var payload={ contactId:contactId, eventId:d.eventId||"", courseId:d.courseId||"",
+    /* The page is bound to the participant's FORUM registration, and that is the record that
+       carries "Registered for Seminar". Send its id so n8n can tick it. */
+    var rEl=document.getElementById("visitingRegId");
+    var regId=rEl?val(rEl.textContent):"";
+    var payload={ contactId:contactId, regId:regId, eventId:d.eventId||"", courseId:d.courseId||"",
       cantAttendFirst:(mEl("exceptionCheck")||{}).checked?1:0, course:d.course||"", pattern:d.pattern||"" };
     var btn=document.querySelector("#regForm .btn-confirm");
     if(!WEBHOOK_URL){ showSuccess(d); return false; }
