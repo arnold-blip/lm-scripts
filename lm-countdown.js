@@ -25,7 +25,7 @@
 
   var CONFIG = {
     mountId:        'lm-countdown',
-    label:          'Your guest discount ends in',
+    label:          'Your discount ends in',
     urgentHours:    24,      // switch to the urgent palette inside this many hours
     waitForEngineMs: 4000,   // how long to wait for lm-price-window.js before going it alone
     feedId:         'lm-cd-feed',
