@@ -1,4 +1,3 @@
-<script>
 /* =====================================================================
    Tuesday Evening Graduate Survey - New Era Landmark Forum Pilot
    Self-contained: no external file, no GitHub dependency.
@@ -438,4 +437,3 @@ if (document.readyState === 'loading') {
 } else {
   initSurvey();
 }
-</script>
