@@ -10,7 +10,7 @@ var STORAGE_KEY = 'landmark_tuesday_survey_draft_v1';
 var SUBMIT_KEY  = 'landmark_tuesday_survey_submitted_v1';
 var LAST_CH = 13;   // thank-you screen index
 
-var ENDPOINT = 'https://tobinjarrett.awesomate.io/webhook/tuesday-graduate-survey';
+var ENDPOINT = 'https://landmarkworldwide.awesomate.io/webhook/tuesday-graduate-survey';
 
 /* ---------- question config ---------- */
 
